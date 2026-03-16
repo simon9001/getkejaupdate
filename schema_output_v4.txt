@@ -1,0 +1,21 @@
+[dotenv@17.3.1] injecting env (23) from .env -- tip: ≡ƒöÉ prevent committing .env to code: https://dotenvx.com/precommit
+≡ƒÜÇ Environment loaded: {
+  nodeEnv: 'development',
+  port: 8000,
+  frontendUrl: 'http://localhost:5173',
+  apiUrl: 'http://localhost:8000',
+  emailVerificationExpires: '24 hours',
+  passwordResetExpires: '1 hours',
+  reminderTime: '12 hours',
+  jwtSecret: 'Γ£ô',
+  emailVerificationSecret: 'Γ£ô',
+  passwordResetSecret: 'Γ£ô'
+}
+Probing tables...
+Γ£à Table properties exists. Row count: 0
+Γ£à Table property_locations exists. Row count: 0
+Γ£à Table property_units exists. Row count: null
+Γ£à Table listings exists. Row count: null
+Γ£à Table pricing exists. Row count: null
+Γ£à Table landmarks exists. Row count: 0
+Γ£à Table amenities exists. Row count: 0

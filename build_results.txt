@@ -1,0 +1,7 @@
+
+> BackendGETKEJA@ build C:\Users\Administrator\THE-HouseHunting\The new system\BackendGETKEJA
+> tsc
+
+src/Auth/auth.service.ts(48,48): error TS2554: Expected 2 arguments, but got 0.
+src/Auth/auth.service.ts(352,48): error TS2554: Expected 2 arguments, but got 0.
+ΓÇëELIFECYCLEΓÇë Command failed with exit code 2.

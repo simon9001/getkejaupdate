@@ -1,0 +1,10 @@
+
+> BackendGETKEJA@ build C:\Users\Administrator\THE-HouseHunting\The new system\BackendGETKEJA
+> tsc
+
+src/Auth/auth.controller.ts(234,31): error TS2554: Expected 1 arguments, but got 0.
+src/Auth/auth.service.ts(48,48): error TS2554: Expected 2 arguments, but got 0.
+src/Auth/auth.service.ts(352,48): error TS2554: Expected 2 arguments, but got 0.
+src/Auth/auth.service.ts(446,32): error TS2551: Property 'sendPasswordChangeNotification' does not exist on type 'EmailService'. Did you mean 'sendPasswordChangedNotification'?
+src/scripts/test-email.ts(6,42): error TS2339: Property 'testConnection' does not exist on type 'EmailService'.
+ΓÇëELIFECYCLEΓÇë Command failed with exit code 2.

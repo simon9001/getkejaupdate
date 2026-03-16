@@ -1,0 +1,41 @@
+[dotenv@17.3.1] injecting env (23) from .env -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+≡ƒÜÇ Environment loaded: {
+  nodeEnv: 'development',
+  port: 8000,
+  frontendUrl: 'http://localhost:5173',
+  apiUrl: 'http://localhost:8000',
+  emailVerificationExpires: '24 hours',
+  passwordResetExpires: '1 hours',
+  reminderTime: '12 hours',
+  jwtSecret: 'Γ£ô',
+  emailVerificationSecret: 'Γ£ô',
+  passwordResetSecret: 'Γ£ô'
+}
+Probing tables...
+Γ£à Table profiles exists. Row count: 2
+Columns for profiles: [
+  'id',
+  'full_name',
+  'email',
+  'phone',
+  'password_hash',
+  'avatar_url',
+  'created_at',
+  'email_verified',
+  'updated_at'
+]
+Γ£à Table password_resets exists. Row count: null
+Γ£à Table email_verifications exists. Row count: 2
+Columns for email_verifications: [ 'id', 'user_id', 'token', 'expires_at', 'created_at', 'verified_at' ]
+Γ£à Table user_roles exists. Row count: 2
+Columns for user_roles: [ 'user_id', 'role' ]
+Γ£à Table user_tokens exists. Row count: 12
+Columns for user_tokens: [
+  'id',
+  'user_id',
+  'token',
+  'device_info',
+  'created_at',
+  'expires_at',
+  'last_used_at'
+]

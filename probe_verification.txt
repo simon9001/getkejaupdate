@@ -1,0 +1,26 @@
+[dotenv@17.3.1] injecting env (23) from .env -- tip: ≡ƒ¢í∩╕Å auth for agents: https://vestauth.com
+≡ƒÜÇ Environment loaded: {
+  nodeEnv: 'development',
+  port: 8000,
+  frontendUrl: 'http://localhost:5173',
+  apiUrl: 'http://localhost:8000',
+  emailVerificationExpires: '24 hours',
+  passwordResetExpires: '1 hours',
+  reminderTime: '12 hours',
+  jwtSecret: 'Γ£ô',
+  emailVerificationSecret: 'Γ£ô',
+  passwordResetSecret: 'Γ£ô'
+}
+--- Probing Spatial RPC Functions ---
+
+Testing get_properties_within_radius...
+Result: Could not find the function public.get_properties_within_radius(lat, lon, max_price, min_beds, radius_m, search_query) in the schema cache
+
+Testing geometry_within...
+Result: Could not find the function public.geometry_within(lat, lon, radius_m) in the schema cache
+
+Testing get_nearest_landmarks...
+Result: Could not find the function public.get_nearest_landmarks(lim, px, py) in the schema cache
+
+Testing get_nearest_road...
+Result: Could not find the function public.get_nearest_road(px, py) in the schema cache
