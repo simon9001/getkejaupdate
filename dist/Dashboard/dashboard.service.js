@@ -45,10 +45,9 @@ export class DashboardService {
             .eq('status', 'confirmed');
         const { data: rentData } = await supabaseAdmin
             .from('properties')
-            .select('price')
-            .eq('owner_id', userId)
-            .eq('listing_type', 'rent');
-        const totalRent = rentData?.reduce((sum, p) => sum + (p.price || 0), 0) || 0;
+            .select('price_per_month')
+            .eq('owner_id', userId);
+        const totalRent = rentData?.reduce((sum, p) => sum + (p.price_per_month || 0), 0) || 0;
         const { count: caretakers } = await supabaseAdmin
             .from('property_caretakers')
             .select('*', { count: 'exact', head: true })

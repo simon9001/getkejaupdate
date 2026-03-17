@@ -208,6 +208,7 @@ export class PropertiesService {
                 .select(`
                     *,
                     owner:profiles!owner_id(
+                        id,
                         full_name,
                         email,
                         phone,
@@ -535,6 +536,7 @@ export class PropertiesService {
                 .select(`
                     *,
                     owner:profiles!owner_id(
+                        id,
                         full_name,
                         email,
                         phone,
@@ -1076,7 +1078,7 @@ export class PropertiesService {
                     *,
                     location:property_locations(*),
                     images:property_images(*),
-                    owner:profiles(full_name, email)
+                    owner:profiles!owner_id(full_name, email)
                 `)
                 .eq('is_verified', false)
                 .order('created_at', { ascending: false });
@@ -1092,13 +1094,14 @@ export class PropertiesService {
     /**
      * Verify a property
      */
-    async verifyProperty(id) {
+    async verifyProperty(id, adminId) {
         try {
             const { data, error } = await supabaseAdmin
                 .from('properties')
                 .update({
                 is_verified: true,
                 status: 'active',
+                verified_by: adminId,
                 verified_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             })
@@ -1112,6 +1115,32 @@ export class PropertiesService {
         catch (error) {
             logger.error({ error: error.message }, 'Verify property error');
             throw new Error(`Failed to verify property: ${error.message}`);
+        }
+    }
+    /**
+     * Reject a property (sets status to rejected)
+     */
+    async rejectProperty(id, adminId, reason) {
+        try {
+            const { data, error } = await supabaseAdmin
+                .from('properties')
+                .update({
+                is_verified: false,
+                status: 'rejected',
+                rejection_reason: reason || null,
+                verified_by: adminId,
+                updated_at: new Date().toISOString()
+            })
+                .eq('id', id)
+                .select()
+                .single();
+            if (error)
+                throw error;
+            return data;
+        }
+        catch (error) {
+            logger.error({ error: error.message }, 'Reject property error');
+            throw new Error(`Failed to reject property: ${error.message}`);
         }
     }
     /**
@@ -1142,13 +1171,21 @@ export class PropertiesService {
      */
     async strikeProperty(id, isStruck) {
         try {
-            const { data, error } = await supabaseAdmin
-                .from('properties')
-                .update({
+            const updates = {
                 is_struck: isStruck,
                 status: isStruck ? 'suspended' : 'active',
                 updated_at: new Date().toISOString()
-            })
+            };
+            // If striking a property, revoke verification and boost
+            if (isStruck) {
+                updates.is_verified = false;
+                updates.verified_at = null;
+                updates.verified_by = null;
+                updates.is_boosted = false;
+            }
+            const { data, error } = await supabaseAdmin
+                .from('properties')
+                .update(updates)
                 .eq('id', id)
                 .select()
                 .single();

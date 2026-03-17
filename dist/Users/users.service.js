@@ -6,9 +6,9 @@ export class UsersService {
         let query = supabaseAdmin
             .from('profiles')
             .select(`
-                id, full_name, email, phone, avatar_url, created_at, email_verified,
-                roles:user_roles(role),
-                verification:user_verifications(status)
+                *,
+                roles:user_roles!user_id(role),
+                verification:user_verifications!user_id(status)
             `, { count: 'exact' });
         if (search) {
             query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`);
@@ -26,6 +26,7 @@ export class UsersService {
             avatar_url: u.avatar_url,
             created_at: u.created_at,
             email_verified: u.email_verified,
+            is_active: u.is_active !== undefined ? u.is_active : true, // Default to true if column missing
             roles: u.roles?.map((r) => r.role) || [],
             status: u.verification?.[0]?.status || 'pending'
         }));
@@ -49,9 +50,28 @@ export class UsersService {
         return { success: true };
     }
     async updateUserStatus(id, status) {
+        if (typeof status === 'boolean') {
+            const { error } = await supabaseAdmin
+                .from('profiles')
+                .update({ is_active: status, updated_at: new Date().toISOString() })
+                .eq('id', id);
+            if (error)
+                throw error;
+        }
+        else {
+            const { error } = await supabaseAdmin
+                .from('user_verifications')
+                .upsert({ user_id: id, status, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+            if (error)
+                throw error;
+        }
+        return { success: true };
+    }
+    async deleteUser(id) {
         const { error } = await supabaseAdmin
-            .from('user_verifications')
-            .upsert({ user_id: id, status, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+            .from('profiles')
+            .delete()
+            .eq('id', id);
         if (error)
             throw error;
         return { success: true };

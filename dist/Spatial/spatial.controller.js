@@ -58,5 +58,45 @@ export class SpatialController {
             return c.json({ message: error.message || 'Proximity calculation failed' }, 500);
         }
     }
+    /**
+     * Search for places using Nominatim (External Search)
+     */
+    async searchExternal(c) {
+        try {
+            const query = c.req.query('q');
+            if (!query) {
+                return c.json({ message: 'Search query is required' }, 400);
+            }
+            const results = await spatialService.searchExternalPlaces(query);
+            return c.json(results);
+        }
+        catch (error) {
+            logger.error({ error: error.message }, 'External search error');
+            return c.json({ message: error.message || 'External search failed' }, 500);
+        }
+    }
+    /**
+     * Link landmark to property
+     */
+    async linkLandmark(c) {
+        try {
+            const body = await c.req.json();
+            logger.info({ body }, 'Received link-landmark request');
+            const { propertyId, landmark } = body;
+            if (!propertyId || !landmark || !landmark.name || landmark.lat === undefined || landmark.lon === undefined) {
+                logger.warn({ body }, 'Invalid link-landmark request body');
+                return c.json({
+                    message: 'Property ID and complete landmark data (name, lat, lon) are required',
+                    received: body
+                }, 400);
+            }
+            const result = await spatialService.linkLandmark(propertyId, landmark);
+            return c.json(result);
+        }
+        catch (error) {
+            logger.error({ error: error.message }, 'Link landmark error');
+            return c.json({ message: error.message || 'Linking landmark failed' }, 500);
+        }
+    }
 }
 export const spatialController = new SpatialController();

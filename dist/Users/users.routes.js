@@ -18,4 +18,5 @@ const authorizeAdmin = async (c, next) => {
 usersRouter.get('/', authorizeAdmin, (c) => usersController.getAllUsers(c));
 usersRouter.patch('/:id/role', authorizeAdmin, (c) => usersController.updateUserRole(c));
 usersRouter.patch('/:id/status', authorizeAdmin, (c) => usersController.updateUserStatus(c));
+usersRouter.delete('/:id', authorizeAdmin, (c) => usersController.deleteUser(c));
 export { usersRouter };

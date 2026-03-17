@@ -391,6 +391,74 @@ export class AuthService {
         }
         return { success: true };
     }
+    async forgotPassword(email) {
+        const { data: user, error: userError } = await supabaseAdmin
+            .from('profiles')
+            .select('id, full_name, email')
+            .eq('email', email)
+            .maybeSingle();
+        if (userError)
+            throw userError;
+        if (!user)
+            return { success: true }; // Don't leak user existence
+        const resetToken = tokenService.generatePasswordResetToken(user.id, email);
+        const hashedToken = tokenService.hashToken(resetToken);
+        const expiresAt = new Date(Date.now() + env.passwordResetExpires);
+        const { error: tokenError } = await supabaseAdmin
+            .from('password_resets')
+            .upsert({
+            user_id: user.id,
+            token: hashedToken,
+            expires_at: expiresAt.toISOString(),
+            created_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        if (tokenError)
+            throw tokenError;
+        await emailService.sendPasswordResetEmail(email, resetToken, user.full_name);
+        return { success: true };
+    }
+    async resetPassword(token, newPass) {
+        let payload;
+        try {
+            payload = tokenService.verifyPasswordResetToken(token);
+        }
+        catch (err) {
+            return { error: err.message || 'Invalid or expired token', code: 'INVALID_TOKEN' };
+        }
+        const hashedToken = tokenService.hashToken(token);
+        const { data: resetRecord, error: fetchError } = await supabaseAdmin
+            .from('password_resets')
+            .select('*')
+            .eq('token', hashedToken)
+            .eq('user_id', payload.userId)
+            .maybeSingle();
+        if (fetchError)
+            throw fetchError;
+        if (!resetRecord)
+            return { error: 'Invalid reset link', code: 'INVALID_TOKEN' };
+        const password_hash = await bcrypt.hash(newPass, 10);
+        await supabaseAdmin
+            .from('profiles')
+            .update({ password_hash, updated_at: new Date().toISOString() })
+            .eq('id', payload.userId);
+        // Delete the reset token
+        await supabaseAdmin
+            .from('password_resets')
+            .delete()
+            .eq('id', resetRecord.id);
+        // Invalidate all sessions for security
+        await supabaseAdmin
+            .from('user_tokens')
+            .delete()
+            .eq('user_id', payload.userId);
+        try {
+            await emailService.sendPasswordChangedNotification(payload.email, '');
+        }
+        catch (err) {
+            console.error('Password changed email error:', err);
+        }
+        return { success: true };
+    }
     async blacklistToken(token, userId) {
         try {
             const hashedToken = tokenService.hashToken(token);

@@ -14,6 +14,8 @@ import { propertiesRouter } from './Properties/properties.routes.js';
 import { spatialRouter } from './Spatial/spatial.routes.js';
 import { dashboardRouter } from './Dashboard/dashboard.routes.js';
 import { usersRouter } from './Users/users.routes.js';
+import { uploadRouter } from './Upload/upload.routes.js';
+import chatRouter from './Chat/chat.routes.js';
 import { apiRateLimiter, authRateLimiter } from './middleware/rateLimiter.js';
 import { scheduledCleanup } from './cron/cleanup.cron.js';
 const app = new Hono();
@@ -66,7 +68,7 @@ app.use('*', secureHeaders());
 app.use('*', cors({
     origin: env.frontendUrl,
     credentials: true,
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
 }));
 if (env.nodeEnv === 'development') {
@@ -169,11 +171,13 @@ app.use('/api/auth/*', authRateLimiter);
 // ---------------------------
 // Routes
 // ---------------------------
-app.route('api/auth', authRouter);
-app.route('api/properties', propertiesRouter);
-app.route('api/spatial', spatialRouter);
-app.route('api/dashboard', dashboardRouter);
-app.route('api/users', usersRouter);
+app.route('/api/auth', authRouter);
+app.route('/api/properties', propertiesRouter);
+app.route('/api/spatial', spatialRouter);
+app.route('/api/dashboard', dashboardRouter);
+app.route('/api/users', usersRouter);
+app.route('/api/upload', uploadRouter);
+app.route('/api/chat', chatRouter);
 // ---------------------------
 // Error Handling
 // ---------------------------

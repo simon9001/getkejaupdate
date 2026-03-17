@@ -34,10 +34,20 @@ export class UsersController {
         try {
             const { id } = c.req.param();
             const { status } = await c.req.json();
-            if (!status) {
+            if (status === undefined) {
                 return c.json({ error: 'Status is required' }, 400);
             }
             const result = await this.usersService.updateUserStatus(id, status);
+            return c.json(result);
+        }
+        catch (error) {
+            return c.json({ error: error.message }, 500);
+        }
+    }
+    async deleteUser(c) {
+        try {
+            const { id } = c.req.param();
+            const result = await this.usersService.deleteUser(id);
             return c.json(result);
         }
         catch (error) {

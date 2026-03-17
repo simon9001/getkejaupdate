@@ -1,5 +1,5 @@
-import { AuthService } from './Auth/auth.service';
-import { supabaseAdmin } from './utils/supabase';
+import { AuthService } from './Auth/auth.service.js';
+import { supabaseAdmin } from './utils/supabase.js';
 async function debug() {
     const authService = new AuthService();
     const testEmail = 'simon9001@example.com'; // Use a known email or one from profiles

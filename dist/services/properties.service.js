@@ -5,7 +5,7 @@ export class PropertiesService {
      * Create a new property with its location
      */
     async createProperty(ownerId, input) {
-        const { address, town, county, latitude, longitude, neighborhood, amenity_ids, ...propertyData } = input;
+        const { address, town, county, latitude, longitude, neighborhood, amenity_ids, images, ...propertyData } = input;
         // Start a transaction-like sequence using Supabase
         // 1. Insert property
         const { data: property, error: propError } = await supabaseAdmin

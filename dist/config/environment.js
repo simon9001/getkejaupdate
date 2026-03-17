@@ -80,6 +80,12 @@ const environment = {
     },
     // Logging
     logLevel: process.env.LOG_LEVEL || 'info',
+    // Cloudinary (image storage — credentials kept server-side)
+    cloudinary: {
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME || 'dwuizf438',
+        apiKey: process.env.CLOUDINARY_API_KEY || '882356767525192',
+        apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    },
 };
 // Validate that all secret values are strings and have minimum length
 const validateSecrets = () => {

@@ -209,4 +209,41 @@ export class AuthController {
             return c.json({ message: 'Failed to fetch profile', code: 'SERVER_ERROR' }, 500);
         }
     }
+    async forgotPassword(c) {
+        try {
+            const { email } = await c.req.json();
+            if (!email) {
+                return c.json({ message: 'Email is required', code: 'MISSING_EMAIL' }, 400);
+            }
+            const result = await this.authService.forgotPassword(email);
+            return c.json({
+                message: 'If an account exists with that email, a reset link has been sent.',
+                code: 'FORGOT_PASSWORD_SUCCESS'
+            });
+        }
+        catch (error) {
+            console.error('Forgot password error:', error);
+            return c.json({ message: 'Failed to request password reset', code: 'SERVER_ERROR' }, 500);
+        }
+    }
+    async resetPassword(c) {
+        try {
+            const { token, password } = await c.req.json();
+            if (!token || !password) {
+                return c.json({ message: 'Token and password are required', code: 'MISSING_DATA' }, 400);
+            }
+            const result = await this.authService.resetPassword(token, password);
+            if (result.error) {
+                return c.json({ message: result.error, code: result.code }, 400);
+            }
+            return c.json({
+                message: 'Password reset successfully. You can now login with your new password.',
+                code: 'RESET_PASSWORD_SUCCESS'
+            });
+        }
+        catch (error) {
+            console.error('Reset password error:', error);
+            return c.json({ message: 'Failed to reset password', code: 'SERVER_ERROR' }, 500);
+        }
+    }
 }
