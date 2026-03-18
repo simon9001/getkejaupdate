@@ -245,7 +245,7 @@ app.notFound((c) => {
 // ---------------------------
 // Start Server
 // ---------------------------
-const port = env.port;
+const port = Number(process.env.PORT) || env.port || 8000;
 
 serve({
   fetch: app.fetch,
