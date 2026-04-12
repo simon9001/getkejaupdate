@@ -29,17 +29,17 @@ export const authenticate = async (c: Context, next: Next) => {
     }
 
     // Check if email is verified using Supabase Admin
-    const { data: profile, error } = await supabaseAdmin
-      .from('profiles')
-      .select('email_verified')
+    const { data: user, error } = await supabaseAdmin
+      .from('users')
+      .select('email_verified, account_status')
       .eq('id', decoded.userId)
       .single();
 
-    if (error || !profile) {
+    if (error || !user) {
       return c.json({ message: 'User not found' }, 401);
     }
 
-    if (!profile.email_verified) {
+    if (!user.email_verified) {
       return c.json({
         message: 'Email not verified. Please verify your email before proceeding.',
         code: 'EMAIL_NOT_VERIFIED'

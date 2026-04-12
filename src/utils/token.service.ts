@@ -80,10 +80,10 @@ export class TokenService {
   generateAccessToken(user: UserWithRoles): string {
     this.validateJwtSecret();
     
-    const payload: TokenPayload = { 
-      userId: user.id, 
+    const payload: TokenPayload = {
+      userId: user.userId,
       email: user.email,
-      roles: user.roles 
+      roles: user.roles
     };
     
     return jwt.sign(

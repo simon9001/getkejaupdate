@@ -1,0 +1,2962 @@
+-- =============================================================================
+-- Kenya Real Estate Platform — PostgreSQL Schema
+-- Generated from: ke_property_schema_full, ke_users_schema, revenue_and_search_schema
+-- Requires: PostgreSQL 14+ with PostGIS extension
+-- =============================================================================
+
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "postgis";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";   -- fuzzy text search
+CREATE EXTENSION IF NOT EXISTS "unaccent";  -- accent-insensitive search
+
+-- =============================================================================
+-- SECTION 1: ENUMS
+-- Define all custom types first so tables can reference them
+-- =============================================================================
+
+-- Property core
+CREATE TYPE listing_category_enum AS ENUM (
+    'for_sale', 'long_term_rent', 'short_term_rent', 'commercial'
+);
+
+CREATE TYPE listing_type_enum AS ENUM (
+    'apartment', 'house', 'bedsitter', 'plot', 'maisonette',
+    'studio', 'villa', 'off_plan'
+);
+
+CREATE TYPE management_model_enum AS ENUM (
+    'owner_direct', 'agent_managed', 'caretaker_managed', 'developer_held'
+);
+
+CREATE TYPE property_status_enum AS ENUM (
+    'available', 'let', 'sold', 'off_market', 'under_offer'
+);
+
+CREATE TYPE construction_status_enum AS ENUM (
+    'completed', 'off_plan', 'under_construction'
+);
+
+CREATE TYPE water_supply_enum AS ENUM (
+    'nairobi_water', 'borehole', 'both', 'tank_only'
+);
+
+CREATE TYPE electricity_supply_enum AS ENUM (
+    'kplc_prepaid', 'kplc_postpaid', 'solar', 'generator'
+);
+
+CREATE TYPE waste_management_enum AS ENUM (
+    'ncc_collection', 'private', 'septic_tank'
+);
+
+CREATE TYPE furnished_enum AS ENUM (
+    'unfurnished', 'semi_furnished', 'fully_furnished'
+);
+
+-- Property contacts
+CREATE TYPE contact_role_enum AS ENUM (
+    'landlord', 'caretaker', 'agent', 'developer', 'property_manager'
+);
+
+-- Pricing
+CREATE TYPE rent_frequency_enum AS ENUM (
+    'monthly', 'quarterly', 'annually'
+);
+
+CREATE TYPE water_bill_type_enum AS ENUM (
+    'included', 'metered', 'shared_split'
+);
+
+CREATE TYPE electricity_bill_type_enum AS ENUM (
+    'included', 'prepaid_token', 'own_meter'
+);
+
+-- Buildings
+CREATE TYPE parking_type_enum AS ENUM (
+    'basement', 'open_compound', 'street'
+);
+
+-- Short-term
+CREATE TYPE short_term_type_enum AS ENUM (
+    'airbnb_bnb', 'party_home', 'holiday_home', 'serviced_apartment'
+);
+
+CREATE TYPE calendar_status_enum AS ENUM (
+    'booked', 'blocked_owner', 'pending'
+);
+
+-- Commercial
+CREATE TYPE commercial_type_enum AS ENUM (
+    'event_space', 'store', 'godown', 'office', 'showroom',
+    'restaurant_shell', 'kiosk'
+);
+
+-- Legal documents
+CREATE TYPE doc_type_enum AS ENUM (
+    'title_deed', 'allotment_letter', 'lease_agreement', 'building_approval',
+    'occupation_cert', 'survey_map', 'nema_cert', 'county_permit'
+);
+
+CREATE TYPE tenure_type_enum AS ENUM (
+    'freehold', 'leasehold_999yr', 'leasehold_99yr',
+    'leasehold_33yr', 'allotment'
+);
+
+-- Plot / land
+CREATE TYPE terrain_enum AS ENUM (
+    'flat', 'sloped', 'ridge', 'valleyside'
+);
+
+CREATE TYPE zoning_use_enum AS ENUM (
+    'residential', 'commercial', 'agricultural', 'mixed'
+);
+
+-- Nearby places
+CREATE TYPE place_type_enum AS ENUM (
+    'school', 'hospital', 'clinic', 'supermarket', 'mall', 'matatu_stage',
+    'petrol_station', 'church', 'mosque', 'police', 'park', 'gym'
+);
+
+-- Units
+CREATE TYPE unit_type_enum AS ENUM (
+    'bedsitter', '1_bed', '2_bed', '3_bed', 'studio', 'penthouse'
+);
+
+CREATE TYPE unit_faces_enum AS ENUM (
+    'road_facing', 'compound_facing', 'corner'
+);
+
+-- Users / auth
+CREATE TYPE auth_provider_enum AS ENUM (
+    'local', 'google', 'apple'
+);
+
+CREATE TYPE account_status_enum AS ENUM (
+    'active', 'suspended', 'pending_verify', 'banned'
+);
+
+CREATE TYPE device_type_enum AS ENUM (
+    'web', 'android', 'ios', 'unknown'
+);
+
+CREATE TYPE mfa_type_enum AS ENUM (
+    'sms_otp', 'totp_app', 'email_otp'
+);
+
+CREATE TYPE audit_event_enum AS ENUM (
+    'login', 'logout', 'failed_login', 'password_change', 'role_change',
+    'listing_create', 'listing_delete', 'account_ban', 'data_export'
+);
+
+-- Verifications
+CREATE TYPE id_doc_type_enum AS ENUM (
+    'national_id', 'passport', 'company_cert', 'earb_license', 'nca_cert'
+);
+
+CREATE TYPE verification_status_enum AS ENUM (
+    'pending', 'approved', 'rejected', 'expired'
+);
+
+-- Seeker
+CREATE TYPE seeker_intent_enum AS ENUM (
+    'buying', 'renting_long', 'renting_short'
+);
+
+CREATE TYPE alert_frequency_enum AS ENUM (
+    'instant', 'daily', 'weekly'
+);
+
+-- Revenue
+CREATE TYPE fee_value_type_enum AS ENUM (
+    'fixed_kes', 'percentage', 'multiplier', 'days', 'boolean'
+);
+
+CREATE TYPE fee_config_group_enum AS ENUM (
+    'listing_fee', 'viewing_fee', 'boost', 'advert', 'subscription', 'search'
+);
+
+CREATE TYPE payment_method_enum AS ENUM (
+    'mpesa', 'card', 'bank_transfer'
+);
+
+CREATE TYPE payment_status_enum AS ENUM (
+    'pending', 'paid', 'failed', 'refunded'
+);
+
+CREATE TYPE ad_pricing_model_enum AS ENUM (
+    'cpm', 'cpc', 'flat_weekly', 'flat_monthly'
+);
+
+CREATE TYPE ad_status_enum AS ENUM (
+    'draft', 'pending_approval', 'active', 'paused', 'ended'
+);
+
+CREATE TYPE subscription_status_enum AS ENUM (
+    'active', 'cancelled', 'past_due', 'expired'
+);
+
+CREATE TYPE billing_cycle_enum AS ENUM (
+    'monthly', 'annual'
+);
+
+CREATE TYPE service_category_enum AS ENUM (
+    'moving_company', 'cleaning', 'legal', 'mortgage', 'insurance',
+    'interior_design', 'contractor', 'utilities'
+);
+
+CREATE TYPE listing_fee_category_enum AS ENUM (
+    'for_sale', 'long_term_rent', 'short_term', 'commercial'
+);
+
+
+-- =============================================================================
+-- SECTION 2: USERS & AUTHENTICATION
+-- =============================================================================
+
+CREATE TABLE users (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email                 VARCHAR(255) UNIQUE NOT NULL,
+    phone_number          VARCHAR(15) UNIQUE,
+    password_hash         VARCHAR(255),                          -- bcrypt cost 12; null for OAuth
+    auth_provider         auth_provider_enum NOT NULL DEFAULT 'local',
+    provider_uid          VARCHAR(200),                          -- OAuth sub/uid
+    account_status        account_status_enum NOT NULL DEFAULT 'pending_verify',
+    email_verified        BOOLEAN NOT NULL DEFAULT FALSE,
+    phone_verified        BOOLEAN NOT NULL DEFAULT FALSE,
+    email_verify_token    VARCHAR(100),                          -- stored as hash
+    email_verify_expires  TIMESTAMPTZ,
+    password_reset_token  VARCHAR(100),                          -- stored as hash, single-use
+    password_reset_expires TIMESTAMPTZ,
+    failed_login_count    SMALLINT NOT NULL DEFAULT 0,
+    locked_until          TIMESTAMPTZ,
+    last_login_at         TIMESTAMPTZ,
+    last_login_ip         INET,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at            TIMESTAMPTZ                            -- soft delete
+);
+
+CREATE INDEX idx_users_email ON users (LOWER(email));
+CREATE INDEX idx_users_phone ON users (phone_number) WHERE phone_number IS NOT NULL;
+CREATE INDEX idx_users_status ON users (account_status);
+CREATE INDEX idx_users_deleted ON users (deleted_at) WHERE deleted_at IS NULL;
+
+
+CREATE TABLE user_sessions (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id             UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    token_hash          VARCHAR(255) NOT NULL,                   -- SHA-256 of JWT
+    device_fingerprint  VARCHAR(200),
+    device_type         device_type_enum NOT NULL DEFAULT 'unknown',
+    ip_address          INET,
+    user_agent          TEXT,
+    location_country    CHAR(2),
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    expires_at          TIMESTAMPTZ NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_sessions_user ON user_sessions (user_id);
+CREATE INDEX idx_sessions_token ON user_sessions (token_hash) WHERE is_active = TRUE;
+CREATE INDEX idx_sessions_active ON user_sessions (user_id, is_active) WHERE is_active = TRUE;
+
+
+CREATE TABLE user_mfa (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id      UUID NOT NULL UNIQUE REFERENCES users (id) ON DELETE CASCADE,
+    mfa_type     mfa_type_enum NOT NULL DEFAULT 'sms_otp',
+    totp_secret  VARCHAR(100),                                   -- AES-256 encrypted at app layer
+    is_enabled   BOOLEAN NOT NULL DEFAULT FALSE,
+    backup_codes JSONB,                                          -- array of hashed codes
+    verified_at  TIMESTAMPTZ
+);
+
+
+CREATE TABLE security_audit_log (
+    id           BIGSERIAL PRIMARY KEY,                          -- sequential = tamper-evident
+    user_id      UUID REFERENCES users (id) ON DELETE SET NULL,  -- nullable: pre-auth events
+    event_type   audit_event_enum NOT NULL,
+    ip_address   INET,
+    user_agent   TEXT,
+    metadata     JSONB,
+    performed_by UUID REFERENCES users (id) ON DELETE SET NULL,  -- admin acting on behalf
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- NEVER delete rows from this table
+);
+
+CREATE INDEX idx_audit_user ON security_audit_log (user_id);
+CREATE INDEX idx_audit_event ON security_audit_log (event_type);
+CREATE INDEX idx_audit_created ON security_audit_log (created_at DESC);
+
+
+-- =============================================================================
+-- SECTION 3: ROLES & PERMISSIONS (RBAC)
+-- =============================================================================
+
+CREATE TABLE roles (
+    id                    SMALLINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    name                  VARCHAR(60) UNIQUE NOT NULL,           -- super_admin, staff, landlord, etc.
+    display_name          VARCHAR(80) NOT NULL,
+    description           TEXT,
+    is_system_role        BOOLEAN NOT NULL DEFAULT FALSE,        -- system roles can't be deleted
+    requires_verification BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed system roles
+INSERT INTO roles (name, display_name, description, is_system_role, requires_verification) VALUES
+    ('super_admin',  'Super Admin',      'Full system access',                            TRUE, FALSE),
+    ('staff',        'Staff / Moderator','Review, verify listings and documents',          TRUE, FALSE),
+    ('landlord',     'Landlord / Owner', 'Post and manage own properties',                 TRUE, TRUE),
+    ('caretaker',    'Caretaker',        'Manage assigned buildings and units',            TRUE, TRUE),
+    ('agent',        'Agent',            'List properties on behalf of owners',            TRUE, TRUE),
+    ('developer',    'Developer',        'Post and manage off-plan projects',              TRUE, TRUE),
+    ('seeker',       'Property Seeker',  'Browse, save, enquire on properties',            TRUE, FALSE);
+
+
+CREATE TABLE permissions (
+    id          SMALLINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    name        VARCHAR(80) UNIQUE NOT NULL,  -- e.g. listing:create
+    category    VARCHAR(40) NOT NULL,         -- listing, user, enquiry, booking, report, settings
+    description TEXT
+);
+
+-- Seed core permissions
+INSERT INTO permissions (name, category, description) VALUES
+    ('listing:create',          'listing',  'Create new property listings'),
+    ('listing:edit_own',        'listing',  'Edit own listings only'),
+    ('listing:edit_any',        'listing',  'Edit any listing on the platform'),
+    ('listing:delete_own',      'listing',  'Delete own listings'),
+    ('listing:delete_any',      'listing',  'Delete any listing on the platform'),
+    ('listing:approve',         'listing',  'Approve or reject listings'),
+    ('user:view',               'user',     'View user profiles'),
+    ('user:manage',             'user',     'Create, edit, suspend user accounts'),
+    ('user:ban',                'user',     'Ban user accounts'),
+    ('user:verify_role',        'user',     'Approve or reject role verification requests'),
+    ('enquiry:view_own',        'enquiry',  'View own enquiries'),
+    ('enquiry:view_all',        'enquiry',  'View all enquiries on the platform'),
+    ('booking:manage',          'booking',  'Manage viewing bookings'),
+    ('document:verify',         'listing',  'Verify legal documents and badges'),
+    ('report:view_own',         'report',   'View reports for own listings'),
+    ('report:view_all',         'report',   'View all platform reports'),
+    ('advert:manage',           'advert',   'Create and manage ad campaigns'),
+    ('advert:approve',          'advert',   'Approve or reject ad campaigns'),
+    ('settings:edit',           'settings', 'Edit platform fee config and settings');
+
+
+CREATE TABLE role_permissions (
+    role_id       SMALLINT NOT NULL REFERENCES roles (id) ON DELETE CASCADE,
+    permission_id SMALLINT NOT NULL REFERENCES permissions (id) ON DELETE CASCADE,
+    granted_by    UUID REFERENCES users (id) ON DELETE SET NULL,
+    granted_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (role_id, permission_id)
+);
+
+
+CREATE TABLE user_roles (
+    user_id     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    role_id     SMALLINT NOT NULL REFERENCES roles (id) ON DELETE CASCADE,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    verified_at TIMESTAMPTZ,                                     -- NULL = pending approval
+    verified_by UUID REFERENCES users (id) ON DELETE SET NULL,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,                                     -- NULL = permanent
+    PRIMARY KEY (user_id, role_id)
+);
+
+CREATE INDEX idx_user_roles_active ON user_roles (user_id, is_active) WHERE is_active = TRUE;
+
+
+-- =============================================================================
+-- SECTION 4: USER PROFILE TABLES (one per role type)
+-- =============================================================================
+
+CREATE TABLE user_profiles (
+    user_id            UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    full_name          VARCHAR(150),
+    display_name       VARCHAR(80),
+    avatar_url         TEXT,
+    preferred_language CHAR(2) NOT NULL DEFAULT 'en',
+    county             VARCHAR(60),
+    notification_prefs JSONB NOT NULL DEFAULT '{"sms": true, "email": true, "push": true}',
+    whatsapp_number    VARCHAR(15),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE landlord_profiles (
+    user_id            UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    id_type            VARCHAR(30) CHECK (id_type IN ('national_id', 'passport', 'company_reg')),
+    id_number          VARCHAR(30),                              -- encrypted at app layer
+    id_verified        BOOLEAN NOT NULL DEFAULT FALSE,
+    id_doc_url         TEXT,                                     -- private S3
+    is_company         BOOLEAN NOT NULL DEFAULT FALSE,
+    company_name       VARCHAR(200),
+    kra_pin            VARCHAR(20),
+    total_properties   INTEGER NOT NULL DEFAULT 0,
+    avg_response_hours DECIMAL(5,1),
+    rating             DECIMAL(3,2) CHECK (rating BETWEEN 0 AND 5),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE caretaker_profiles (
+    user_id              UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    id_number            VARCHAR(30),                            -- encrypted at app layer
+    id_verified          BOOLEAN NOT NULL DEFAULT FALSE,
+    id_doc_url           TEXT,
+    lives_on_compound    BOOLEAN NOT NULL DEFAULT FALSE,
+    assigned_building_id UUID,                                   -- FK added after rental_buildings
+    employed_by          UUID REFERENCES users (id) ON DELETE SET NULL,
+    work_hours           VARCHAR(100),
+    emergency_contact    VARCHAR(15),
+    rating               DECIMAL(3,2) CHECK (rating BETWEEN 0 AND 5),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE agent_profiles (
+    user_id            UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    earb_license_no    VARCHAR(60),
+    license_verified   BOOLEAN NOT NULL DEFAULT FALSE,
+    license_expiry     DATE,
+    license_doc_url    TEXT,
+    agency_name        VARCHAR(200),
+    years_experience   SMALLINT,
+    specialisations    TEXT[],
+    service_counties   TEXT[],
+    commission_rate_pct DECIMAL(4,2),
+    avg_response_hours DECIMAL(5,1),
+    rating             DECIMAL(3,2) CHECK (rating BETWEEN 0 AND 5),
+    total_listings     INTEGER NOT NULL DEFAULT 0,
+    total_closed_deals INTEGER NOT NULL DEFAULT 0,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE developer_profiles (
+    user_id              UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    company_name         VARCHAR(200) NOT NULL,
+    company_reg_no       VARCHAR(60),
+    kra_pin              VARCHAR(20),
+    nca_reg_no           VARCHAR(60),
+    nca_verified         BOOLEAN NOT NULL DEFAULT FALSE,
+    years_in_operation   SMALLINT,
+    completed_projects   INTEGER NOT NULL DEFAULT 0,
+    website_url          TEXT,
+    logo_url             TEXT,
+    rating               DECIMAL(3,2) CHECK (rating BETWEEN 0 AND 5),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE seeker_profiles (
+    user_id             UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    intent              seeker_intent_enum,
+    budget_min          DECIMAL(15,2),
+    budget_max          DECIMAL(15,2),
+    preferred_counties  TEXT[],
+    preferred_areas     TEXT[],
+    preferred_types     TEXT[],
+    min_bedrooms        SMALLINT,
+    saved_searches      JSONB NOT NULL DEFAULT '[]',
+    alert_frequency     alert_frequency_enum NOT NULL DEFAULT 'weekly',
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- =============================================================================
+-- SECTION 5: IDENTITY VERIFICATION
+-- =============================================================================
+
+CREATE TABLE id_verifications (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id          UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    doc_type         id_doc_type_enum NOT NULL,
+    doc_number       VARCHAR(60),                                -- encrypted at app layer
+    front_image_url  TEXT,
+    back_image_url   TEXT,
+    selfie_url       TEXT,
+    status           verification_status_enum NOT NULL DEFAULT 'pending',
+    reviewed_by      UUID REFERENCES users (id) ON DELETE SET NULL,
+    rejection_reason TEXT,
+    submitted_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewed_at      TIMESTAMPTZ,
+    expires_at       DATE
+);
+
+CREATE INDEX idx_id_verif_user ON id_verifications (user_id);
+CREATE INDEX idx_id_verif_status ON id_verifications (status);
+
+
+-- =============================================================================
+-- SECTION 6: CORE PROPERTY TABLE
+-- =============================================================================
+
+CREATE TABLE properties (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    listing_category    listing_category_enum NOT NULL,
+    listing_type        listing_type_enum NOT NULL,
+    management_model    management_model_enum NOT NULL DEFAULT 'owner_direct',
+    title               VARCHAR(200) NOT NULL,
+    description         TEXT,
+    status              property_status_enum NOT NULL DEFAULT 'available',
+    construction_status construction_status_enum NOT NULL DEFAULT 'completed',
+    year_built          SMALLINT,
+    floor_area_sqm      DECIMAL(10,2),
+    plot_area_sqft      DECIMAL(10,2),
+    bedrooms            SMALLINT,
+    bathrooms           DECIMAL(3,1),
+    is_ensuite          BOOLEAN NOT NULL DEFAULT FALSE,
+    parking_spaces      SMALLINT NOT NULL DEFAULT 0,
+    compound_is_gated   BOOLEAN NOT NULL DEFAULT FALSE,
+    security_type       TEXT[],
+    water_supply        water_supply_enum,
+    has_borehole        BOOLEAN NOT NULL DEFAULT FALSE,
+    electricity_supply  electricity_supply_enum,
+    waste_management    waste_management_enum,
+    is_furnished        furnished_enum NOT NULL DEFAULT 'unfurnished',
+    is_featured         BOOLEAN NOT NULL DEFAULT FALSE,
+    published_at        TIMESTAMPTZ,
+    created_by          UUID REFERENCES users (id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_properties_category ON properties (listing_category);
+CREATE INDEX idx_properties_status ON properties (status) WHERE deleted_at IS NULL;
+CREATE INDEX idx_properties_bedrooms ON properties (bedrooms) WHERE deleted_at IS NULL;
+CREATE INDEX idx_properties_featured ON properties (is_featured) WHERE is_featured = TRUE;
+
+
+-- =============================================================================
+-- SECTION 7: PROPERTY CONTACTS (landlord / caretaker / agent triangle)
+-- =============================================================================
+
+CREATE TABLE property_contacts (
+    id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id        UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    role               contact_role_enum NOT NULL,
+    full_name          VARCHAR(150) NOT NULL,
+    display_name       VARCHAR(100),
+    phone_primary      VARCHAR(15) NOT NULL,
+    phone_secondary    VARCHAR(15),
+    whatsapp_number    VARCHAR(15),
+    email              VARCHAR(200),
+    is_primary_contact BOOLEAN NOT NULL DEFAULT FALSE,
+    is_on_site         BOOLEAN NOT NULL DEFAULT FALSE,
+    availability_hours VARCHAR(100),
+    languages          TEXT[],
+    agent_license_no   VARCHAR(80),
+    license_verified   BOOLEAN NOT NULL DEFAULT FALSE,
+    profile_photo_url  TEXT,
+    id_verified        BOOLEAN NOT NULL DEFAULT FALSE,
+    verified_at        TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_contacts_property ON property_contacts (property_id);
+CREATE INDEX idx_contacts_primary ON property_contacts (property_id, is_primary_contact)
+    WHERE is_primary_contact = TRUE;
+
+
+-- =============================================================================
+-- SECTION 8: LOCATION
+-- =============================================================================
+
+CREATE TABLE property_locations (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id          UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    county               VARCHAR(60) NOT NULL,
+    sub_county           VARCHAR(80),
+    area                 VARCHAR(100),
+    estate_name          VARCHAR(150),
+    road_street          VARCHAR(200),
+    plot_number          VARCHAR(60),
+    directions           TEXT,
+    nearest_landmark     VARCHAR(200),
+    latitude             DECIMAL(10,7),
+    longitude            DECIMAL(10,7),
+    geom                 GEOMETRY(Point, 4326),
+    display_full_address BOOLEAN NOT NULL DEFAULT TRUE,
+    matatu_routes        TEXT[]
+);
+
+CREATE INDEX idx_locations_county ON property_locations (county);
+CREATE INDEX idx_locations_area ON property_locations (area);
+CREATE INDEX idx_locations_geom ON property_locations USING GIST (geom);
+
+
+-- =============================================================================
+-- SECTION 9: PRICING
+-- =============================================================================
+
+CREATE TABLE property_pricing (
+    id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id            UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    currency               CHAR(3) NOT NULL DEFAULT 'KES',
+    asking_price           DECIMAL(15,2),
+    monthly_rent           DECIMAL(12,2),
+    rent_frequency         rent_frequency_enum NOT NULL DEFAULT 'monthly',
+    deposit_months         SMALLINT,
+    deposit_amount         DECIMAL(12,2),
+    goodwill_fee           DECIMAL(10,2),
+    service_charge         DECIMAL(10,2),
+    caretaker_fee          DECIMAL(8,2),
+    garbage_fee            DECIMAL(8,2),
+    water_bill_type        water_bill_type_enum NOT NULL DEFAULT 'metered',
+    electricity_bill_type  electricity_bill_type_enum NOT NULL DEFAULT 'prepaid_token',
+    negotiable             BOOLEAN NOT NULL DEFAULT FALSE,
+    price_history          JSONB NOT NULL DEFAULT '[]',
+    agent_commission_pct   DECIMAL(4,2),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_pricing_monthly_rent ON property_pricing (monthly_rent)
+    WHERE monthly_rent IS NOT NULL;
+CREATE INDEX idx_pricing_asking_price ON property_pricing (asking_price)
+    WHERE asking_price IS NOT NULL;
+
+
+-- =============================================================================
+-- SECTION 10: PROPERTY MEDIA
+-- =============================================================================
+
+CREATE TABLE property_media (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id  UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    media_type   VARCHAR(20) NOT NULL CHECK (media_type IN (
+                     'photo','video','floor_plan','virtual_tour','drone')),
+    url          TEXT NOT NULL,
+    thumbnail_url TEXT,
+    room_id      UUID,
+    caption      VARCHAR(200),
+    sort_order   SMALLINT NOT NULL DEFAULT 0,
+    is_cover     BOOLEAN NOT NULL DEFAULT FALSE,
+    uploaded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_media_property ON property_media (property_id, sort_order);
+
+
+-- =============================================================================
+-- SECTION 11: ROOMS
+-- =============================================================================
+
+CREATE TABLE rooms (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    room_type   VARCHAR(30) NOT NULL CHECK (room_type IN (
+                    'bedroom','bathroom','kitchen','living','dining',
+                    'study','store','balcony','other')),
+    name        VARCHAR(80),
+    length_m    DECIMAL(5,2),
+    width_m     DECIMAL(5,2),
+    floor_level SMALLINT,
+    features    TEXT[],
+    flooring_type VARCHAR(60)
+);
+
+CREATE INDEX idx_rooms_property ON rooms (property_id);
+
+-- Add FK from media to rooms after rooms is created
+ALTER TABLE property_media ADD CONSTRAINT fk_media_room
+    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE SET NULL;
+
+
+-- =============================================================================
+-- SECTION 12: PROPERTY AMENITIES
+-- =============================================================================
+
+CREATE TABLE property_amenities (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    category    VARCHAR(30) NOT NULL CHECK (category IN (
+                    'security','recreation','utilities','green','transport','other')),
+    name        VARCHAR(100) NOT NULL,
+    is_included BOOLEAN NOT NULL DEFAULT TRUE,
+    notes       TEXT
+);
+
+CREATE INDEX idx_amenities_property ON property_amenities (property_id);
+
+
+-- =============================================================================
+-- SECTION 13: NEARBY PLACES
+-- =============================================================================
+
+CREATE TABLE nearby_places (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id       UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    place_type        place_type_enum NOT NULL,
+    name              VARCHAR(150) NOT NULL,
+    distance_m        INTEGER,
+    walk_minutes      SMALLINT,
+    drive_minutes     SMALLINT,
+    matatu_stage_name VARCHAR(100),
+    school_type       VARCHAR(60),
+    google_maps_url   TEXT,
+    verified          BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX idx_nearby_property ON nearby_places (property_id);
+CREATE INDEX idx_nearby_type ON nearby_places (place_type);
+
+
+-- =============================================================================
+-- SECTION 14: LEGAL DOCUMENTS
+-- =============================================================================
+
+CREATE TABLE legal_documents (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id       UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    doc_type          doc_type_enum NOT NULL,
+    title_number      VARCHAR(100),
+    land_reference_no VARCHAR(80),
+    tenure_type       tenure_type_enum,
+    lease_start_date  DATE,
+    lease_expiry_date DATE,
+    issuing_authority VARCHAR(150),
+    file_url          TEXT,
+    show_badge_only   BOOLEAN NOT NULL DEFAULT TRUE,
+    verified_by_staff UUID REFERENCES users (id) ON DELETE SET NULL,
+    verified_at       TIMESTAMPTZ,
+    ardhisasa_synced  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_legal_docs_property ON legal_documents (property_id);
+
+
+-- =============================================================================
+-- SECTION 15: RENTAL BUILDINGS & UNITS
+-- =============================================================================
+
+CREATE TABLE rental_buildings (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                  VARCHAR(150) NOT NULL,
+    total_units           SMALLINT,
+    floors                SMALLINT,
+    has_lift              BOOLEAN NOT NULL DEFAULT FALSE,
+    has_backup_generator  BOOLEAN NOT NULL DEFAULT FALSE,
+    has_swimming_pool     BOOLEAN NOT NULL DEFAULT FALSE,
+    has_gym               BOOLEAN NOT NULL DEFAULT FALSE,
+    has_rooftop           BOOLEAN NOT NULL DEFAULT FALSE,
+    parking_type          parking_type_enum,
+    compound_shared_spaces TEXT[],
+    management_company    VARCHAR(150),
+    year_built            SMALLINT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Now we can add the FK on caretaker_profiles
+ALTER TABLE caretaker_profiles ADD CONSTRAINT fk_caretaker_building
+    FOREIGN KEY (assigned_building_id) REFERENCES rental_buildings (id) ON DELETE SET NULL;
+
+
+CREATE TABLE rental_units (
+    id                       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id              UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    building_id              UUID NOT NULL REFERENCES rental_buildings (id) ON DELETE CASCADE,
+    unit_number              VARCHAR(20),
+    floor_level              SMALLINT,
+    unit_type                unit_type_enum,
+    faces                    unit_faces_enum,
+    has_balcony              BOOLEAN NOT NULL DEFAULT FALSE,
+    is_corner_unit           BOOLEAN NOT NULL DEFAULT FALSE,
+    availability_date        DATE,
+    current_tenant_vacating  BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX idx_units_building ON rental_units (building_id);
+
+
+-- =============================================================================
+-- SECTION 16: SHORT-TERM CONFIG & CALENDAR
+-- =============================================================================
+
+CREATE TABLE short_term_config (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id          UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    short_term_type      short_term_type_enum NOT NULL,
+    price_per_night      DECIMAL(10,2),
+    price_per_weekend    DECIMAL(10,2),
+    price_per_event      DECIMAL(10,2),
+    min_nights           SMALLINT NOT NULL DEFAULT 1,
+    max_nights           SMALLINT,
+    max_guests           SMALLINT,
+    max_event_capacity   SMALLINT,
+    noise_curfew_time    TIME,
+    check_in_time        TIME NOT NULL DEFAULT '14:00',
+    check_out_time       TIME NOT NULL DEFAULT '10:00',
+    instant_book         BOOLEAN NOT NULL DEFAULT FALSE,
+    cleaning_fee         DECIMAL(8,2),
+    damage_deposit       DECIMAL(10,2),
+    rules                TEXT[],
+    airbnb_listing_url   TEXT,
+    catering_available   BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+
+CREATE TABLE availability_calendar (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id    UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    date_from      DATE NOT NULL,
+    date_to        DATE NOT NULL,
+    status         calendar_status_enum NOT NULL DEFAULT 'pending',
+    booking_ref    VARCHAR(60),
+    price_override DECIMAL(10,2),
+    notes          TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_dates CHECK (date_to > date_from)
+);
+
+CREATE INDEX idx_calendar_property ON availability_calendar (property_id, date_from, date_to);
+
+
+-- =============================================================================
+-- SECTION 17: COMMERCIAL CONFIG
+-- =============================================================================
+
+CREATE TABLE commercial_config (
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id             UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    commercial_type         commercial_type_enum NOT NULL,
+    floor_area_sqft         DECIMAL(12,2),
+    ceiling_height_m        DECIMAL(4,2),
+    loading_bay             BOOLEAN NOT NULL DEFAULT FALSE,
+    drive_in_access         BOOLEAN NOT NULL DEFAULT FALSE,
+    three_phase_power       BOOLEAN NOT NULL DEFAULT FALSE,
+    event_capacity_seated   SMALLINT,
+    event_capacity_standing SMALLINT,
+    has_catering_kitchen    BOOLEAN NOT NULL DEFAULT FALSE,
+    has_pa_system           BOOLEAN NOT NULL DEFAULT FALSE,
+    has_projector_screen    BOOLEAN NOT NULL DEFAULT FALSE,
+    outdoor_space_sqm       DECIMAL(10,2),
+    zoning_classification   VARCHAR(60),
+    alcohol_license_possible BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+
+-- =============================================================================
+-- SECTION 18: PLOT & OFF-PLAN DETAILS
+-- =============================================================================
+
+CREATE TABLE plot_details (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id           UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    size_acres            DECIMAL(10,4),
+    size_sqft             DECIMAL(12,2),
+    road_frontage_m       DECIMAL(8,2),
+    is_corner_plot        BOOLEAN NOT NULL DEFAULT FALSE,
+    terrain               terrain_enum,
+    soil_type             VARCHAR(60),
+    is_serviced           BOOLEAN NOT NULL DEFAULT FALSE,
+    zoning_use            zoning_use_enum,
+    payment_plan_available BOOLEAN NOT NULL DEFAULT FALSE,
+    installment_months    SMALLINT
+);
+
+
+CREATE TABLE offplan_details (
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id             UUID NOT NULL UNIQUE REFERENCES properties (id) ON DELETE CASCADE,
+    project_name            VARCHAR(200) NOT NULL,
+    developer_name          VARCHAR(200),
+    completion_quarter      VARCHAR(10),
+    construction_pct        SMALLINT CHECK (construction_pct BETWEEN 0 AND 100),
+    total_units_in_project  SMALLINT,
+    units_sold              SMALLINT NOT NULL DEFAULT 0,
+    payment_plan            JSONB,
+    escrow_bank             VARCHAR(100),
+    nca_reg_number          VARCHAR(80)
+);
+
+
+-- =============================================================================
+-- SECTION 19: CARETAKER ASSIGNMENTS
+-- =============================================================================
+
+CREATE TABLE caretaker_assignments (
+    id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    caretaker_user_id  UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    property_id        UUID REFERENCES properties (id) ON DELETE CASCADE,
+    building_id        UUID REFERENCES rental_buildings (id) ON DELETE CASCADE,
+    assigned_by        UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    can_create_enquiry BOOLEAN NOT NULL DEFAULT TRUE,
+    can_edit_listing   BOOLEAN NOT NULL DEFAULT FALSE,
+    can_collect_rent   BOOLEAN NOT NULL DEFAULT FALSE,
+    assigned_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at         TIMESTAMPTZ,
+    CONSTRAINT chk_assignment_target CHECK (
+        property_id IS NOT NULL OR building_id IS NOT NULL
+    )
+);
+
+CREATE INDEX idx_assignments_caretaker ON caretaker_assignments (caretaker_user_id)
+    WHERE revoked_at IS NULL;
+
+
+-- =============================================================================
+-- SECTION 20: REVENUE — ADMIN FEE CONFIG
+-- =============================================================================
+
+CREATE TABLE fee_config (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    config_key           VARCHAR(80) UNIQUE NOT NULL,
+    config_group         fee_config_group_enum NOT NULL,
+    label                VARCHAR(150) NOT NULL,
+    value_type           fee_value_type_enum NOT NULL,
+    value                DECIMAL(15,4) NOT NULL,
+    min_allowed          DECIMAL(15,4),
+    max_allowed          DECIMAL(15,4),
+    applies_to_category  TEXT[],
+    description          TEXT,
+    updated_by           UUID REFERENCES users (id) ON DELETE SET NULL,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed default config values
+INSERT INTO fee_config (config_key, config_group, label, value_type, value, description) VALUES
+    ('default_search_radius_km',   'search',       'Default search radius (km)',        'multiplier', 3,    'Radius used when no distance specified in search'),
+    ('free_tier_unlock_credits',   'viewing_fee',  'Free tier monthly unlock credits',  'fixed_kes',  2,    'Number of free viewing unlocks per month on free plan'),
+    ('boost_min_duration_days',    'boost',        'Minimum boost duration (days)',     'days',       3,    'Shortest allowed boost package duration'),
+    ('ad_campaign_min_budget_kes', 'advert',       'Minimum ad campaign budget (KES)',  'fixed_kes',  1000, 'Minimum spend for any ad campaign');
+
+
+CREATE TABLE listing_fee_tiers (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tier_name            VARCHAR(60) NOT NULL,
+    listing_category     listing_fee_category_enum NOT NULL,
+    price_min_kes        DECIMAL(15,2) NOT NULL,
+    price_max_kes        DECIMAL(15,2),                          -- NULL = no upper limit
+    listing_fee_kes      DECIMAL(10,2) NOT NULL,
+    listing_duration_days SMALLINT NOT NULL DEFAULT 30,
+    max_photos           SMALLINT NOT NULL DEFAULT 10,
+    max_videos           SMALLINT NOT NULL DEFAULT 2,
+    virtual_tour_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+    featured_badge       BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_by           UUID REFERENCES users (id) ON DELETE SET NULL,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed example tiers for long-term rent
+INSERT INTO listing_fee_tiers
+    (tier_name, listing_category, price_min_kes, price_max_kes, listing_fee_kes,
+     listing_duration_days, max_photos, max_videos, virtual_tour_allowed, featured_badge) VALUES
+    ('Budget',    'long_term_rent',    0,      15000,  300,  30, 8,  1, FALSE, FALSE),
+    ('Mid-range', 'long_term_rent', 15001,     50000,  800,  45, 15, 2, FALSE, FALSE),
+    ('Premium',   'long_term_rent', 50001,    150000, 1500,  60, 25, 4, TRUE,  TRUE),
+    ('Luxury',    'long_term_rent', 150001,   NULL,   3500,  90, 40, 6, TRUE,  TRUE),
+    ('Budget',    'for_sale',           0,   5000000, 1000,  60, 10, 2, FALSE, FALSE),
+    ('Mid-range', 'for_sale',     5000001,  20000000, 3000,  90, 20, 4, TRUE,  FALSE),
+    ('Premium',   'for_sale',    20000001,  80000000, 7500,  90, 35, 6, TRUE,  TRUE),
+    ('Luxury',    'for_sale',    80000001,  NULL,    15000, 120, 50, 8, TRUE,  TRUE);
+
+
+-- =============================================================================
+-- SECTION 21: LISTING PAYMENTS
+-- =============================================================================
+
+CREATE TABLE listing_payments (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id           UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    paid_by_user_id       UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    tier_id               UUID REFERENCES listing_fee_tiers (id) ON DELETE SET NULL,
+    amount_kes            DECIMAL(12,2) NOT NULL,
+    listing_start_date    DATE NOT NULL,
+    listing_end_date      DATE NOT NULL,
+    payment_method        payment_method_enum NOT NULL DEFAULT 'mpesa',
+    mpesa_transaction_id  VARCHAR(30),
+    status                payment_status_enum NOT NULL DEFAULT 'pending',
+    receipt_url           TEXT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_listing_payments_property ON listing_payments (property_id);
+CREATE INDEX idx_listing_payments_status ON listing_payments (status);
+
+
+-- =============================================================================
+-- SECTION 22: VIEWING FEES & UNLOCKS
+-- =============================================================================
+
+CREATE TABLE viewing_fee_config (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    listing_category      listing_fee_category_enum NOT NULL,
+    property_price_min    DECIMAL(15,2) NOT NULL,
+    property_price_max    DECIMAL(15,2),
+    viewing_fee_kes       DECIMAL(8,2) NOT NULL,
+    includes_virtual_tour BOOLEAN NOT NULL DEFAULT FALSE,
+    fee_valid_days        SMALLINT NOT NULL DEFAULT 30,
+    free_for_subscribers  BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_by            UUID REFERENCES users (id) ON DELETE SET NULL,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed default viewing fees
+INSERT INTO viewing_fee_config
+    (listing_category, property_price_min, property_price_max, viewing_fee_kes,
+     includes_virtual_tour, fee_valid_days, free_for_subscribers) VALUES
+    ('long_term_rent',  0,       15000,  50,  FALSE, 30, FALSE),
+    ('long_term_rent',  15001,   50000,  100, FALSE, 30, FALSE),
+    ('long_term_rent',  50001,   NULL,   200, TRUE,  30, TRUE),
+    ('for_sale',        0,       5000000, 200, FALSE, 60, FALSE),
+    ('for_sale',        5000001, NULL,   500, TRUE,  60, TRUE);
+
+
+CREATE TABLE viewing_unlocks (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id          UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    seeker_user_id       UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    fee_paid_kes         DECIMAL(8,2) NOT NULL DEFAULT 0,
+    was_free             BOOLEAN NOT NULL DEFAULT FALSE,
+    mpesa_transaction_id VARCHAR(30),
+    unlocked_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at           TIMESTAMPTZ,
+    viewing_booked       BOOLEAN NOT NULL DEFAULT FALSE,
+    viewing_datetime     TIMESTAMPTZ,
+    UNIQUE (property_id, seeker_user_id)
+);
+
+CREATE INDEX idx_unlocks_seeker ON viewing_unlocks (seeker_user_id);
+CREATE INDEX idx_unlocks_property ON viewing_unlocks (property_id);
+
+
+-- =============================================================================
+-- SECTION 23: VISIBILITY BOOSTS
+-- =============================================================================
+
+CREATE TABLE boost_packages (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                  VARCHAR(60) NOT NULL,
+    duration_days         SMALLINT NOT NULL,
+    price_kes             DECIMAL(10,2) NOT NULL,
+    visibility_score_bonus SMALLINT NOT NULL DEFAULT 10,
+    badge_label           VARCHAR(30),
+    badge_color           CHAR(7),
+    homepage_slot         BOOLEAN NOT NULL DEFAULT FALSE,
+    push_notification     BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_by            UUID REFERENCES users (id) ON DELETE SET NULL,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO boost_packages (name, duration_days, price_kes, visibility_score_bonus,
+    badge_label, badge_color, homepage_slot, push_notification) VALUES
+    ('3-day spotlight', 3,  500,  15, 'Spotlight', '#F59E0B', FALSE, FALSE),
+    ('7-day featured',  7,  1200, 30, 'Featured',  '#10B981', TRUE,  TRUE),
+    ('30-day top',      30, 4000, 60, 'Top Pick',  '#6366F1', TRUE,  TRUE);
+
+
+CREATE TABLE listing_boosts (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id          UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    purchased_by         UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    package_id           UUID NOT NULL REFERENCES boost_packages (id) ON DELETE RESTRICT,
+    amount_paid_kes      DECIMAL(10,2) NOT NULL,
+    mpesa_transaction_id VARCHAR(30),
+    starts_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ends_at              TIMESTAMPTZ NOT NULL,
+    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+    impressions_delivered INTEGER NOT NULL DEFAULT 0,
+    clicks_delivered      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_boosts_property_active ON listing_boosts (property_id, is_active)
+    WHERE is_active = TRUE;
+CREATE INDEX idx_boosts_ends_at ON listing_boosts (ends_at) WHERE is_active = TRUE;
+
+
+CREATE TABLE listing_search_scores (
+    property_id        UUID PRIMARY KEY REFERENCES properties (id) ON DELETE CASCADE,
+    base_score         SMALLINT NOT NULL DEFAULT 0,
+    boost_score        SMALLINT NOT NULL DEFAULT 0,
+    engagement_score   SMALLINT NOT NULL DEFAULT 0,
+    verification_score SMALLINT NOT NULL DEFAULT 0,
+    total_score        INTEGER GENERATED ALWAYS AS
+                           (base_score + boost_score + engagement_score + verification_score)
+                           STORED,
+    last_recalculated  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_scores_total ON listing_search_scores (total_score DESC);
+
+
+-- =============================================================================
+-- SECTION 24: SERVICE ADVERTISING
+-- =============================================================================
+
+CREATE TABLE advertisers (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id          UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    company_name     VARCHAR(200) NOT NULL,
+    service_category service_category_enum NOT NULL,
+    logo_url         TEXT,
+    website_url      TEXT,
+    contact_phone    VARCHAR(15),
+    verified         BOOLEAN NOT NULL DEFAULT FALSE,
+    counties_served  TEXT[],
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE ad_placements (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    slot_name             VARCHAR(80) NOT NULL UNIQUE,
+    slot_description      TEXT,
+    pricing_model         ad_pricing_model_enum NOT NULL,
+    rate_kes              DECIMAL(10,2) NOT NULL,
+    max_ads_per_slot      SMALLINT NOT NULL DEFAULT 1,
+    show_on_listing_types TEXT[],
+    is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_by            UUID REFERENCES users (id) ON DELETE SET NULL,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO ad_placements (slot_name, slot_description, pricing_model, rate_kes,
+    max_ads_per_slot) VALUES
+    ('listing_sidebar',          'Right sidebar on listing detail page',   'cpm',          200,  3),
+    ('search_results_banner',    'Banner above search results',            'cpc',          50,   1),
+    ('listing_detail_bottom',    'Below the property description',         'flat_monthly', 5000, 2),
+    ('homepage_strip',           'Horizontal strip on homepage',           'flat_weekly',  2000, 4);
+
+
+CREATE TABLE ad_campaigns (
+    id                        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    advertiser_id             UUID NOT NULL REFERENCES advertisers (id) ON DELETE CASCADE,
+    placement_id              UUID NOT NULL REFERENCES ad_placements (id) ON DELETE RESTRICT,
+    headline                  VARCHAR(80) NOT NULL,
+    body_text                 VARCHAR(200),
+    cta_label                 VARCHAR(30),
+    cta_url                   TEXT NOT NULL,
+    image_url                 TEXT,
+    target_counties           TEXT[],
+    target_listing_categories TEXT[],
+    budget_kes                DECIMAL(12,2) NOT NULL,
+    spent_kes                 DECIMAL(12,2) NOT NULL DEFAULT 0,
+    starts_at                 DATE NOT NULL,
+    ends_at                   DATE NOT NULL,
+    status                    ad_status_enum NOT NULL DEFAULT 'draft',
+    approved_by               UUID REFERENCES users (id) ON DELETE SET NULL,
+    impressions               INTEGER NOT NULL DEFAULT 0,
+    clicks                    INTEGER NOT NULL DEFAULT 0,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_budget CHECK (spent_kes <= budget_kes),
+    CONSTRAINT chk_ad_dates CHECK (ends_at > starts_at)
+);
+
+CREATE INDEX idx_campaigns_status ON ad_campaigns (status) WHERE status = 'active';
+
+
+-- =============================================================================
+-- SECTION 25: SEEKER SUBSCRIPTIONS
+-- =============================================================================
+
+CREATE TABLE subscription_plans (
+    id                          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                        VARCHAR(60) NOT NULL,
+    price_monthly_kes           DECIMAL(10,2) NOT NULL DEFAULT 0,
+    price_annual_kes            DECIMAL(10,2),
+    viewing_unlocks_per_month   SMALLINT NOT NULL DEFAULT 2,
+    ai_recommendations_per_day  SMALLINT NOT NULL DEFAULT 5,
+    saved_searches_limit        SMALLINT NOT NULL DEFAULT 3,
+    alert_frequency             alert_frequency_enum NOT NULL DEFAULT 'weekly',
+    priority_support            BOOLEAN NOT NULL DEFAULT FALSE,
+    can_see_price_history       BOOLEAN NOT NULL DEFAULT FALSE,
+    can_see_similar_properties  BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active                   BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_by                  UUID REFERENCES users (id) ON DELETE SET NULL,
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO subscription_plans
+    (name, price_monthly_kes, price_annual_kes, viewing_unlocks_per_month,
+     ai_recommendations_per_day, saved_searches_limit, alert_frequency,
+     priority_support, can_see_price_history, can_see_similar_properties) VALUES
+    ('Free',    0,    NULL,  2,  5,  3,  'weekly',  FALSE, FALSE, FALSE),
+    ('Basic',   499,  4990,  10, 20, 10, 'daily',   FALSE, FALSE, TRUE),
+    ('Premium', 999,  9990,  999, 100, 50, 'instant', TRUE,  TRUE,  TRUE);
+
+
+CREATE TABLE user_subscriptions (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id               UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    plan_id               UUID NOT NULL REFERENCES subscription_plans (id) ON DELETE RESTRICT,
+    billing_cycle         billing_cycle_enum NOT NULL DEFAULT 'monthly',
+    amount_kes            DECIMAL(10,2) NOT NULL,
+    status                subscription_status_enum NOT NULL DEFAULT 'active',
+    started_at            DATE NOT NULL DEFAULT CURRENT_DATE,
+    renews_at             DATE,
+    cancelled_at          DATE,
+    unlock_credits_used   SMALLINT NOT NULL DEFAULT 0,
+    ai_queries_used_today SMALLINT NOT NULL DEFAULT 0,
+    mpesa_recurring_token VARCHAR(60)                                      -- encrypted at app layer
+);
+
+CREATE INDEX idx_subscriptions_user ON user_subscriptions (user_id, status);
+CREATE INDEX idx_subscriptions_renews ON user_subscriptions (renews_at) WHERE status = 'active';
+
+
+-- =============================================================================
+-- SECTION 26: SMART SEARCH ENGINE
+-- =============================================================================
+
+CREATE TABLE search_landmarks (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name             VARCHAR(200) NOT NULL,
+    aliases          TEXT[],
+    landmark_type    VARCHAR(30) NOT NULL CHECK (landmark_type IN (
+                         'hospital','school','mall','stage','roundabout',
+                         'stadium','market','government','church','mosque')),
+    county           VARCHAR(60),
+    latitude         DECIMAL(10,7) NOT NULL,
+    longitude        DECIMAL(10,7) NOT NULL,
+    google_place_id  VARCHAR(100),
+    search_frequency INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_landmarks_name ON search_landmarks USING GIN (to_tsvector('english', name));
+CREATE INDEX idx_landmarks_county ON search_landmarks (county);
+
+-- Seed key Kenyan landmarks
+INSERT INTO search_landmarks (name, aliases, landmark_type, county, latitude, longitude) VALUES
+    ('Embu Level 5 Hospital',       ARRAY['Embu L5','Embu General'],      'hospital', 'Embu',    -0.5310, 37.4580),
+    ('Kenyatta National Hospital',  ARRAY['KNH'],                          'hospital', 'Nairobi', -1.3013, 36.8065),
+    ('Westgate Mall',               ARRAY['Westgate'],                     'mall',     'Nairobi', -1.2586, 36.8025),
+    ('Garden City Mall',            ARRAY['Garden City'],                  'mall',     'Nairobi', -1.2281, 36.8749),
+    ('Westlands Matatu Stage',      ARRAY['Westlands Stage','Westlands'],  'stage',    'Nairobi', -1.2676, 36.8038),
+    ('Nakuru Level 5 Hospital',     ARRAY['Nakuru L5','PGH Nakuru'],       'hospital', 'Nakuru',  -0.2827, 36.0661),
+    ('Kisumu Teaching Hospital',    ARRAY['KRGH','Kisumu General'],        'hospital', 'Kisumu',  -0.1022, 34.7617),
+    ('Junction Mall',               ARRAY['The Junction'],                 'mall',     'Nairobi', -1.3027, 36.7740),
+    ('Two Rivers Mall',             ARRAY['Two Rivers'],                   'mall',     'Nairobi', -1.2219, 36.7920),
+    ('Mombasa Road Interchange',    ARRAY['Mlolongo','Mombasa Road'],      'stage',    'Nairobi', -1.3590, 36.8990);
+
+
+CREATE TABLE search_queries (
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id                 UUID REFERENCES users (id) ON DELETE SET NULL,
+    raw_query               TEXT NOT NULL,
+    parsed_bedrooms         SMALLINT,
+    parsed_listing_type     VARCHAR(40),
+    parsed_listing_category VARCHAR(40),
+    parsed_area             VARCHAR(100),
+    parsed_landmark         VARCHAR(200),
+    landmark_lat            DECIMAL(10,7),
+    landmark_lng            DECIMAL(10,7),
+    radius_km               DECIMAL(5,2) NOT NULL DEFAULT 3,
+    parsed_budget_min       DECIMAL(12,2),
+    parsed_budget_max       DECIMAL(12,2),
+    parsed_amenities        TEXT[],
+    result_count            SMALLINT,
+    clicked_property_ids    UUID[],
+    session_id              VARCHAR(60),
+    searched_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_queries_user ON search_queries (user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX idx_search_queries_at ON search_queries (searched_at DESC);
+
+
+CREATE TABLE property_search_index (
+    property_id          UUID PRIMARY KEY REFERENCES properties (id) ON DELETE CASCADE,
+    listing_category     VARCHAR(30),
+    listing_type         VARCHAR(30),
+    bedrooms             SMALLINT,
+    bathrooms            DECIMAL(3,1),
+    monthly_rent_kes     DECIMAL(12,2),
+    asking_price_kes     DECIMAL(15,2),
+    county               VARCHAR(60),
+    area                 VARCHAR(100),
+    geom                 GEOMETRY(Point, 4326),
+    amenities_vector     TEXT[],
+    full_text_vector     TSVECTOR,
+    is_furnished         VARCHAR(20),
+    has_parking          BOOLEAN NOT NULL DEFAULT FALSE,
+    has_borehole         BOOLEAN NOT NULL DEFAULT FALSE,
+    is_gated             BOOLEAN NOT NULL DEFAULT FALSE,
+    visibility_score     INTEGER NOT NULL DEFAULT 0,
+    status               VARCHAR(20),
+    last_synced          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_index_geom ON property_search_index USING GIST (geom);
+CREATE INDEX idx_search_index_fts ON property_search_index USING GIN (full_text_vector);
+CREATE INDEX idx_search_index_amenities ON property_search_index USING GIN (amenities_vector);
+CREATE INDEX idx_search_index_rent ON property_search_index (monthly_rent_kes)
+    WHERE monthly_rent_kes IS NOT NULL AND status = 'available';
+CREATE INDEX idx_search_index_price ON property_search_index (asking_price_kes)
+    WHERE asking_price_kes IS NOT NULL AND status = 'available';
+CREATE INDEX idx_search_index_score ON property_search_index (visibility_score DESC)
+    WHERE status = 'available';
+CREATE INDEX idx_search_index_category ON property_search_index (listing_category, bedrooms);
+
+
+CREATE TABLE user_recommendations (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    property_id     UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    match_score     DECIMAL(5,2) CHECK (match_score BETWEEN 0 AND 100),
+    match_reasons   TEXT[],
+    rank_position   SMALLINT,
+    is_premium_pick BOOLEAN NOT NULL DEFAULT FALSE,
+    generated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    seen_by_user    BOOLEAN NOT NULL DEFAULT FALSE,
+    dismissed       BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE (user_id, property_id)
+);
+
+CREATE INDEX idx_recommendations_user ON user_recommendations (user_id, dismissed, rank_position)
+    WHERE dismissed = FALSE;
+
+
+-- =============================================================================
+-- SECTION 27: FUNCTIONS & TRIGGERS
+-- =============================================================================
+
+-- Auto-update updated_at timestamp
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_properties_updated_at
+    BEFORE UPDATE ON properties
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_pricing_updated_at
+    BEFORE UPDATE ON property_pricing
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_user_profiles_updated_at
+    BEFORE UPDATE ON user_profiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_seeker_profiles_updated_at
+    BEFORE UPDATE ON seeker_profiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- Auto-populate property_search_index when a property is published
+CREATE OR REPLACE FUNCTION sync_property_search_index()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_loc   property_locations%ROWTYPE;
+    v_price property_pricing%ROWTYPE;
+    v_score listing_search_scores%ROWTYPE;
+BEGIN
+    SELECT * INTO v_loc   FROM property_locations WHERE property_id = NEW.id;
+    SELECT * INTO v_price FROM property_pricing   WHERE property_id = NEW.id;
+    SELECT * INTO v_score FROM listing_search_scores WHERE property_id = NEW.id;
+
+    INSERT INTO property_search_index (
+        property_id, listing_category, listing_type, bedrooms, bathrooms,
+        monthly_rent_kes, asking_price_kes, county, area, geom,
+        is_furnished, has_parking, has_borehole, is_gated,
+        visibility_score, status, full_text_vector, last_synced
+    ) VALUES (
+        NEW.id,
+        NEW.listing_category::TEXT,
+        NEW.listing_type::TEXT,
+        NEW.bedrooms,
+        NEW.bathrooms,
+        v_price.monthly_rent,
+        v_price.asking_price,
+        v_loc.county,
+        v_loc.area,
+        v_loc.geom,
+        NEW.is_furnished::TEXT,
+        CASE WHEN NEW.parking_spaces > 0 THEN TRUE ELSE FALSE END,
+        NEW.has_borehole,
+        NEW.compound_is_gated,
+        COALESCE(v_score.total_score, 0),
+        NEW.status::TEXT,
+        to_tsvector('english',
+            COALESCE(NEW.title, '') || ' ' ||
+            COALESCE(NEW.description, '') || ' ' ||
+            COALESCE(v_loc.county, '') || ' ' ||
+            COALESCE(v_loc.area, '') || ' ' ||
+            COALESCE(v_loc.estate_name, '') || ' ' ||
+            COALESCE(v_loc.nearest_landmark, '')
+        ),
+        NOW()
+    )
+    ON CONFLICT (property_id) DO UPDATE SET
+        listing_category  = EXCLUDED.listing_category,
+        listing_type      = EXCLUDED.listing_type,
+        bedrooms          = EXCLUDED.bedrooms,
+        bathrooms         = EXCLUDED.bathrooms,
+        monthly_rent_kes  = EXCLUDED.monthly_rent_kes,
+        asking_price_kes  = EXCLUDED.asking_price_kes,
+        county            = EXCLUDED.county,
+        area              = EXCLUDED.area,
+        geom              = EXCLUDED.geom,
+        is_furnished      = EXCLUDED.is_furnished,
+        has_parking       = EXCLUDED.has_parking,
+        has_borehole      = EXCLUDED.has_borehole,
+        is_gated          = EXCLUDED.is_gated,
+        visibility_score  = EXCLUDED.visibility_score,
+        status            = EXCLUDED.status,
+        full_text_vector  = EXCLUDED.full_text_vector,
+        last_synced       = NOW();
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_sync_search_index
+    AFTER INSERT OR UPDATE OF status, bedrooms, bathrooms, is_furnished,
+        parking_spaces, has_borehole, compound_is_gated, title, description
+    ON properties
+    FOR EACH ROW EXECUTE FUNCTION sync_property_search_index();
+
+
+-- Auto-deactivate expired boosts
+CREATE OR REPLACE FUNCTION deactivate_expired_boosts()
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE listing_boosts
+    SET is_active = FALSE
+    WHERE is_active = TRUE AND ends_at < NOW();
+
+    -- Recompute boost_score for affected properties
+    UPDATE listing_search_scores lss
+    SET boost_score = COALESCE((
+        SELECT SUM(bp.visibility_score_bonus)
+        FROM listing_boosts lb
+        JOIN boost_packages bp ON lb.package_id = bp.id
+        WHERE lb.property_id = lss.property_id AND lb.is_active = TRUE
+    ), 0),
+    last_recalculated = NOW();
+END;
+$$;
+-- Schedule via pg_cron: SELECT cron.schedule('0 * * * *', 'SELECT deactivate_expired_boosts()');
+
+
+-- Smart search helper: find properties near a landmark within budget
+CREATE OR REPLACE FUNCTION search_properties_near_landmark(
+    p_landmark_lat      DECIMAL,
+    p_landmark_lng      DECIMAL,
+    p_radius_km         DECIMAL DEFAULT 3,
+    p_bedrooms          SMALLINT DEFAULT NULL,
+    p_budget_min        DECIMAL DEFAULT NULL,
+    p_budget_max        DECIMAL DEFAULT NULL,
+    p_listing_category  VARCHAR DEFAULT NULL,
+    p_limit             INTEGER DEFAULT 20
+)
+RETURNS TABLE (
+    property_id      UUID,
+    listing_category VARCHAR,
+    listing_type     VARCHAR,
+    bedrooms         SMALLINT,
+    monthly_rent_kes DECIMAL,
+    asking_price_kes DECIMAL,
+    county           VARCHAR,
+    area             VARCHAR,
+    distance_m       DOUBLE PRECISION,
+    visibility_score INTEGER
+)
+LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        psi.property_id,
+        psi.listing_category,
+        psi.listing_type,
+        psi.bedrooms,
+        psi.monthly_rent_kes,
+        psi.asking_price_kes,
+        psi.county,
+        psi.area,
+        ST_Distance(
+            psi.geom::GEOGRAPHY,
+            ST_SetSRID(ST_MakePoint(p_landmark_lng, p_landmark_lat), 4326)::GEOGRAPHY
+        ) AS distance_m,
+        psi.visibility_score
+    FROM property_search_index psi
+    WHERE
+        psi.status = 'available'
+        AND ST_DWithin(
+            psi.geom::GEOGRAPHY,
+            ST_SetSRID(ST_MakePoint(p_landmark_lng, p_landmark_lat), 4326)::GEOGRAPHY,
+            p_radius_km * 1000
+        )
+        AND (p_bedrooms IS NULL OR psi.bedrooms = p_bedrooms)
+        AND (p_listing_category IS NULL OR psi.listing_category = p_listing_category)
+        AND (p_budget_min IS NULL OR
+             COALESCE(psi.monthly_rent_kes, psi.asking_price_kes) >= p_budget_min)
+        AND (p_budget_max IS NULL OR
+             COALESCE(psi.monthly_rent_kes, psi.asking_price_kes) <= p_budget_max)
+    ORDER BY psi.visibility_score DESC, distance_m ASC
+    LIMIT p_limit;
+END;
+$$;
+
+
+-- =============================================================================
+-- SECTION 28: ROW-LEVEL SECURITY (RLS)
+-- Your API should connect as a low-privilege role, not superuser
+-- =============================================================================
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE property_pricing ENABLE ROW LEVEL SECURITY;
+ALTER TABLE legal_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE security_audit_log ENABLE ROW LEVEL SECURITY;
+
+-- Example RLS policy: users can only see their own row
+CREATE POLICY users_self_select ON users
+    FOR SELECT USING (id = current_setting('app.current_user_id', TRUE)::UUID);
+
+-- Admin bypass (use a dedicated admin role in your connection pool)
+CREATE POLICY users_admin_all ON users
+    FOR ALL USING (current_setting('app.user_role', TRUE) = 'super_admin');
+
+-- Properties: published properties visible to all, drafts only to owner
+CREATE POLICY properties_public_read ON properties
+    FOR SELECT USING (status = 'available' AND deleted_at IS NULL);
+
+CREATE POLICY properties_owner_all ON properties
+    FOR ALL USING (created_by = current_setting('app.current_user_id', TRUE)::UUID);
+
+
+-- =============================================================================
+-- SECTION 29: USEFUL VIEWS
+-- =============================================================================
+
+-- Full property listing view — joins all core tables
+CREATE OR REPLACE VIEW vw_property_listings AS
+SELECT
+    p.id,
+    p.listing_category,
+    p.listing_type,
+    p.management_model,
+    p.title,
+    p.status,
+    p.bedrooms,
+    p.bathrooms,
+    p.is_furnished,
+    p.compound_is_gated,
+    p.water_supply,
+    p.electricity_supply,
+    p.is_featured,
+    p.published_at,
+    -- Location
+    pl.county,
+    pl.area,
+    pl.estate_name,
+    pl.nearest_landmark,
+    pl.latitude,
+    pl.longitude,
+    pl.matatu_routes,
+    -- Pricing
+    pp.monthly_rent,
+    pp.asking_price,
+    pp.currency,
+    pp.deposit_months,
+    pp.caretaker_fee,
+    pp.garbage_fee,
+    pp.water_bill_type,
+    pp.electricity_bill_type,
+    pp.negotiable,
+    -- Score
+    lss.total_score AS visibility_score,
+    lss.boost_score
+FROM properties p
+LEFT JOIN property_locations pl ON pl.property_id = p.id
+LEFT JOIN property_pricing pp ON pp.property_id = p.id
+LEFT JOIN listing_search_scores lss ON lss.property_id = p.id
+WHERE p.deleted_at IS NULL;
+
+
+-- Active boosts summary
+CREATE OR REPLACE VIEW vw_active_boosts AS
+SELECT
+    lb.property_id,
+    bp.name AS package_name,
+    bp.badge_label,
+    bp.badge_color,
+    bp.visibility_score_bonus,
+    lb.starts_at,
+    lb.ends_at,
+    lb.impressions_delivered,
+    lb.clicks_delivered
+FROM listing_boosts lb
+JOIN boost_packages bp ON bp.id = lb.package_id
+WHERE lb.is_active = TRUE AND lb.ends_at > NOW();
+
+
+-- Revenue summary per day (admin dashboard)
+CREATE OR REPLACE VIEW vw_daily_revenue AS
+
+-- Listing fees
+SELECT
+    DATE(created_at)          AS day,
+    'listing_fee'             AS revenue_type,
+    SUM(amount_kes)           AS total_kes,
+    COUNT(*)                  AS transaction_count
+FROM listing_payments
+WHERE status = 'paid'
+GROUP BY DATE(created_at)
+
+UNION ALL
+
+-- Viewing unlock fees
+SELECT
+    DATE(unlocked_at)         AS day,
+    'viewing_fee'             AS revenue_type,
+    SUM(fee_paid_kes)         AS total_kes,
+    COUNT(*)                  AS transaction_count
+FROM viewing_unlocks
+WHERE fee_paid_kes > 0
+GROUP BY DATE(unlocked_at)
+
+UNION ALL
+
+-- Subscriptions
+SELECT
+    DATE(started_at)          AS day,   -- ✅ FIXED
+    'subscription'            AS revenue_type,
+    SUM(amount_kes)           AS total_kes,
+    COUNT(*)                  AS transaction_count
+FROM user_subscriptions
+WHERE status IN ('active', 'cancelled') -- optional improvement
+GROUP BY DATE(started_at)
+
+ORDER BY day DESC, revenue_type;
+
+
+-- =============================================================================
+-- END OF SCHEMA
+-- Tables: 42 | Indexes: 38 | Triggers: 5 | Functions: 4 | Views: 3
+-- =============================================================================
+
+
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'user_subscriptions';
+
+
+
+----this is the migratison for escrow
+
+
+-- =============================================================================
+-- GETKEJA — Short-Stay (Airbnb-Style) Migration
+-- Run this after the main schema migration.
+-- New tables:
+--   short_stay_bookings     — the core booking record
+--   booking_payments        — payment ledger (guest charge + owner payout)
+--   booking_checkins        — check-in / check-out events (escrow release trigger)
+--   booking_cancellations   — cancellation audit with refund calculation
+--   property_reviews        — guest reviews of properties
+--   host_reviews            — host reviews of guests
+--   short_stay_disputes     — dispute management
+-- =============================================================================
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ENUMS
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TYPE booking_status_enum AS ENUM (
+    'pending_payment',    -- created, awaiting guest payment
+    'confirmed',          -- payment received, host notified
+    'checked_in',         -- guest confirmed check-in (escrow released to host)
+    'checked_out',        -- stay complete
+    'cancelled_guest',    -- cancelled by guest (refund per policy)
+    'cancelled_host',     -- cancelled by host (full refund)
+    'disputed',           -- under dispute review
+    'completed'           -- review window closed, fully settled
+);
+
+CREATE TYPE payment_role_enum AS ENUM (
+    'guest_charge',       -- payment from guest → platform escrow
+    'host_payout',        -- release from escrow → host (after check-in)
+    'platform_fee',       -- platform commission retained
+    'refund_guest',       -- refund from escrow → guest (on cancellation)
+    'penalty_host'        -- host penalty for late cancellation
+);
+
+CREATE TYPE payment_ledger_status_enum AS ENUM (
+    'pending',            -- payment initiated
+    'held_escrow',        -- funds in escrow (confirmed booking)
+    'released',           -- funds transferred to recipient
+    'failed',             -- payment/payout failed
+    'refunded'            -- refunded to source
+);
+
+CREATE TYPE checkin_type_enum AS ENUM (
+    'guest_self',         -- guest self-checked in via app
+    'host_confirmed',     -- host confirmed guest arrived
+    'admin_override'      -- admin override (dispute resolution)
+);
+
+CREATE TYPE cancellation_policy_enum AS ENUM (
+    'flexible',           -- full refund up to 24h before check-in
+    'moderate',           -- full refund up to 5 days before check-in
+    'strict',             -- 50% refund up to 7 days before check-in
+    'non_refundable'      -- no refund
+);
+
+CREATE TYPE review_status_enum AS ENUM (
+    'pending',            -- within review window (14 days post checkout)
+    'published',          -- visible to all
+    'flagged',            -- flagged for review by admin
+    'removed'             -- removed by admin
+);
+
+CREATE TYPE dispute_status_enum AS ENUM (
+    'open',
+    'under_review',
+    'resolved_guest',
+    'resolved_host',
+    'escalated'
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Add cancellation_policy to short_term_config
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE short_term_config
+    ADD COLUMN IF NOT EXISTS cancellation_policy cancellation_policy_enum NOT NULL DEFAULT 'moderate',
+    ADD COLUMN IF NOT EXISTS platform_fee_pct     DECIMAL(4,2)            NOT NULL DEFAULT 10.00,
+    ADD COLUMN IF NOT EXISTS host_payout_pct      DECIMAL(4,2)            NOT NULL DEFAULT 90.00,
+    ADD COLUMN IF NOT EXISTS check_in_instructions TEXT,
+    ADD COLUMN IF NOT EXISTS wifi_password         VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS access_code           VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS house_manual_url       TEXT,
+    ADD COLUMN IF NOT EXISTS min_advance_booking_hours SMALLINT           NOT NULL DEFAULT 2,
+    ADD COLUMN IF NOT EXISTS max_advance_booking_days  SMALLINT           NOT NULL DEFAULT 365;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SHORT_STAY_BOOKINGS  — core booking record
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE short_stay_bookings (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id          UUID NOT NULL REFERENCES properties (id) ON DELETE RESTRICT,
+    guest_user_id        UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    host_user_id         UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,  -- denorm for quick lookups
+
+    -- Stay dates
+    check_in_date        DATE NOT NULL,
+    check_out_date       DATE NOT NULL,
+    nights               SMALLINT GENERATED ALWAYS AS
+                             (check_out_date - check_in_date) STORED,
+    guests_count         SMALLINT NOT NULL DEFAULT 1,
+
+    -- Pricing snapshot (captured at booking time — prices may change later)
+    price_per_night_kes  DECIMAL(10,2) NOT NULL,
+    subtotal_kes         DECIMAL(12,2) NOT NULL,   -- nights × price_per_night
+    cleaning_fee_kes     DECIMAL(8,2)  NOT NULL DEFAULT 0,
+    damage_deposit_kes   DECIMAL(10,2) NOT NULL DEFAULT 0,
+    platform_fee_kes     DECIMAL(10,2) NOT NULL DEFAULT 0,
+    total_charged_kes    DECIMAL(12,2) NOT NULL,   -- subtotal + cleaning + platform fee
+
+    -- Host payout (released after check-in)
+    host_payout_kes      DECIMAL(12,2) NOT NULL,   -- total_charged - platform_fee_kes - cleaning portion
+
+    -- Status
+    status               booking_status_enum NOT NULL DEFAULT 'pending_payment',
+    cancellation_policy  cancellation_policy_enum NOT NULL,
+
+    -- Timestamps
+    requested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    confirmed_at         TIMESTAMPTZ,
+    cancelled_at         TIMESTAMPTZ,
+    completed_at         TIMESTAMPTZ,
+
+    -- Guest details snapshot
+    guest_name           VARCHAR(150),
+    guest_phone          VARCHAR(15),
+    special_requests     TEXT,
+
+    -- Booking reference (shown to guest)
+    booking_ref          VARCHAR(20) UNIQUE NOT NULL DEFAULT
+                             'GK-' || UPPER(SUBSTRING(gen_random_uuid()::TEXT FROM 1 FOR 8)),
+
+    CONSTRAINT chk_booking_dates  CHECK (check_out_date > check_in_date),
+    CONSTRAINT chk_guests_count   CHECK (guests_count >= 1),
+    CONSTRAINT chk_total_positive CHECK (total_charged_kes > 0)
+);
+
+CREATE INDEX idx_bookings_property    ON short_stay_bookings (property_id);
+CREATE INDEX idx_bookings_guest       ON short_stay_bookings (guest_user_id);
+CREATE INDEX idx_bookings_host        ON short_stay_bookings (host_user_id);
+CREATE INDEX idx_bookings_status      ON short_stay_bookings (status);
+CREATE INDEX idx_bookings_dates       ON short_stay_bookings (check_in_date, check_out_date);
+CREATE INDEX idx_bookings_ref         ON short_stay_bookings (booking_ref);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- BOOKING_PAYMENTS — full payment ledger (escrow model)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE booking_payments (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    booking_id           UUID NOT NULL REFERENCES short_stay_bookings (id) ON DELETE CASCADE,
+    role                 payment_role_enum NOT NULL,
+    amount_kes           DECIMAL(12,2) NOT NULL,
+    status               payment_ledger_status_enum NOT NULL DEFAULT 'pending',
+    payment_method       payment_method_enum NOT NULL DEFAULT 'mpesa',
+
+    -- M-Pesa / payment gateway references
+    mpesa_transaction_id VARCHAR(50),
+    mpesa_checkout_id    VARCHAR(50),
+    gateway_reference    VARCHAR(100),
+
+    -- Recipient (null for guest charges)
+    recipient_user_id    UUID REFERENCES users (id) ON DELETE SET NULL,
+    recipient_account    VARCHAR(100),    -- phone number or bank account
+
+    -- Timing
+    initiated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at         TIMESTAMPTZ,
+    failed_at            TIMESTAMPTZ,
+    failure_reason       TEXT,
+
+    -- Escrow fields
+    held_since           TIMESTAMPTZ,    -- when funds entered escrow
+    released_at          TIMESTAMPTZ,    -- when funds left escrow
+    release_trigger      VARCHAR(100),   -- 'check_in_confirmed', 'admin_override', etc.
+
+    CONSTRAINT chk_payment_amount CHECK (amount_kes > 0)
+);
+
+CREATE INDEX idx_payments_booking    ON booking_payments (booking_id);
+CREATE INDEX idx_payments_status     ON booking_payments (status);
+CREATE INDEX idx_payments_recipient  ON booking_payments (recipient_user_id) WHERE recipient_user_id IS NOT NULL;
+CREATE INDEX idx_payments_mpesa      ON booking_payments (mpesa_transaction_id) WHERE mpesa_transaction_id IS NOT NULL;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- BOOKING_CHECKINS — check-in / check-out events
+-- This is the ESCROW RELEASE TRIGGER.
+-- When a check-in row with type ≠ null is inserted and verified = TRUE,
+-- the application releases host_payout to the host.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE booking_checkins (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    booking_id           UUID NOT NULL REFERENCES short_stay_bookings (id) ON DELETE CASCADE,
+    event_type           VARCHAR(20) NOT NULL CHECK (event_type IN ('check_in', 'check_out')),
+    checkin_type         checkin_type_enum NOT NULL DEFAULT 'guest_self',
+    performed_by         UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+
+    -- Verification
+    verified             BOOLEAN NOT NULL DEFAULT FALSE,
+    verified_at          TIMESTAMPTZ,
+    verified_by          UUID REFERENCES users (id) ON DELETE SET NULL,
+
+    -- Location proof (optional — GPS from mobile)
+    latitude             DECIMAL(10,7),
+    longitude            DECIMAL(10,7),
+    location_accuracy_m  SMALLINT,
+
+    -- Photo proof (Cloudinary URL)
+    proof_photo_url      TEXT,
+
+    -- Notes
+    notes                TEXT,
+    recorded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Payout trigger tracking
+    payout_triggered     BOOLEAN NOT NULL DEFAULT FALSE,
+    payout_triggered_at  TIMESTAMPTZ
+);
+
+CREATE INDEX idx_checkins_booking    ON booking_checkins (booking_id);
+CREATE INDEX idx_checkins_event      ON booking_checkins (event_type);
+CREATE UNIQUE INDEX idx_checkins_unique ON booking_checkins (booking_id, event_type);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- BOOKING_CANCELLATIONS — cancellation + refund audit
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE booking_cancellations (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    booking_id           UUID NOT NULL UNIQUE REFERENCES short_stay_bookings (id) ON DELETE CASCADE,
+    cancelled_by         UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    cancelled_by_role    VARCHAR(20) NOT NULL CHECK (cancelled_by_role IN ('guest','host','admin')),
+    reason               TEXT,
+
+    -- Refund calculation (based on cancellation policy + timing)
+    nights_before_checkin SMALLINT NOT NULL,
+    policy_applied       cancellation_policy_enum NOT NULL,
+    refund_pct           DECIMAL(5,2) NOT NULL,        -- 0–100
+    refund_amount_kes    DECIMAL(12,2) NOT NULL,
+    platform_fee_refunded DECIMAL(10,2) NOT NULL DEFAULT 0,
+
+    -- Processing
+    refund_status        payment_ledger_status_enum NOT NULL DEFAULT 'pending',
+    refund_mpesa_ref     VARCHAR(50),
+    processed_at         TIMESTAMPTZ,
+    cancelled_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_cancellations_booking ON booking_cancellations (booking_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PROPERTY_REVIEWS — guest reviews of properties (post-stay)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE property_reviews (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    booking_id           UUID NOT NULL UNIQUE REFERENCES short_stay_bookings (id) ON DELETE CASCADE,
+    property_id          UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    reviewer_user_id     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    host_user_id         UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+
+    -- Ratings (1–5 each)
+    rating_overall       SMALLINT NOT NULL CHECK (rating_overall BETWEEN 1 AND 5),
+    rating_cleanliness   SMALLINT     CHECK (rating_cleanliness BETWEEN 1 AND 5),
+    rating_accuracy      SMALLINT     CHECK (rating_accuracy BETWEEN 1 AND 5),
+    rating_communication SMALLINT     CHECK (rating_communication BETWEEN 1 AND 5),
+    rating_location      SMALLINT     CHECK (rating_location BETWEEN 1 AND 5),
+    rating_value         SMALLINT     CHECK (rating_value BETWEEN 1 AND 5),
+
+    review_text          TEXT,
+    status               review_status_enum NOT NULL DEFAULT 'pending',
+
+    -- Host public reply
+    host_reply           TEXT,
+    host_replied_at      TIMESTAMPTZ,
+
+    submitted_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at         TIMESTAMPTZ,
+    flagged_reason       TEXT
+);
+
+CREATE INDEX idx_prop_reviews_property  ON property_reviews (property_id);
+CREATE INDEX idx_prop_reviews_reviewer  ON property_reviews (reviewer_user_id);
+CREATE INDEX idx_prop_reviews_host      ON property_reviews (host_user_id);
+CREATE INDEX idx_prop_reviews_status    ON property_reviews (status) WHERE status = 'published';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- HOST_REVIEWS — host reviews of guests (post-stay)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE host_reviews (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    booking_id           UUID NOT NULL UNIQUE REFERENCES short_stay_bookings (id) ON DELETE CASCADE,
+    reviewer_user_id     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    guest_user_id        UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+
+    rating_overall       SMALLINT NOT NULL CHECK (rating_overall BETWEEN 1 AND 5),
+    rating_communication SMALLINT     CHECK (rating_communication BETWEEN 1 AND 5),
+    rating_cleanliness   SMALLINT     CHECK (rating_cleanliness BETWEEN 1 AND 5),
+    rating_rules         SMALLINT     CHECK (rating_rules BETWEEN 1 AND 5),
+
+    review_text          TEXT,
+    would_host_again     BOOLEAN,
+    status               review_status_enum NOT NULL DEFAULT 'pending',
+
+    submitted_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at         TIMESTAMPTZ
+);
+
+CREATE INDEX idx_host_reviews_guest ON host_reviews (guest_user_id);
+CREATE INDEX idx_host_reviews_host  ON host_reviews (reviewer_user_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SHORT_STAY_DISPUTES — guest vs host dispute management
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE short_stay_disputes (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    booking_id           UUID NOT NULL REFERENCES short_stay_bookings (id) ON DELETE RESTRICT,
+    raised_by            UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    raised_by_role       VARCHAR(10) NOT NULL CHECK (raised_by_role IN ('guest','host')),
+    against_user_id      UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+
+    reason               VARCHAR(200) NOT NULL,
+    description          TEXT NOT NULL,
+    evidence_urls        TEXT[],         -- Cloudinary URLs of photos/docs
+
+    status               dispute_status_enum NOT NULL DEFAULT 'open',
+    resolved_by          UUID REFERENCES users (id) ON DELETE SET NULL,
+    resolution_notes     TEXT,
+    refund_amount_kes    DECIMAL(12,2),  -- admin-determined refund if any
+
+    raised_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_disputes_booking ON short_stay_disputes (booking_id);
+CREATE INDEX idx_disputes_status  ON short_stay_disputes (status) WHERE status IN ('open','under_review');
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PROPERTY REVIEW AGGREGATE — materialised summary updated by trigger
+-- Keeps average ratings on the property without expensive aggregates on reads
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE property_review_stats (
+    property_id          UUID PRIMARY KEY REFERENCES properties (id) ON DELETE CASCADE,
+    total_reviews        INTEGER NOT NULL DEFAULT 0,
+    avg_overall          DECIMAL(3,2),
+    avg_cleanliness      DECIMAL(3,2),
+    avg_accuracy         DECIMAL(3,2),
+    avg_communication    DECIMAL(3,2),
+    avg_location         DECIMAL(3,2),
+    avg_value            DECIMAL(3,2),
+    last_updated         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Trigger to refresh review stats when a review is published
+CREATE OR REPLACE FUNCTION refresh_property_review_stats()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO property_review_stats (
+        property_id, total_reviews,
+        avg_overall, avg_cleanliness, avg_accuracy,
+        avg_communication, avg_location, avg_value, last_updated
+    )
+    SELECT
+        NEW.property_id,
+        COUNT(*),
+        ROUND(AVG(rating_overall)::NUMERIC, 2),
+        ROUND(AVG(rating_cleanliness)::NUMERIC, 2),
+        ROUND(AVG(rating_accuracy)::NUMERIC, 2),
+        ROUND(AVG(rating_communication)::NUMERIC, 2),
+        ROUND(AVG(rating_location)::NUMERIC, 2),
+        ROUND(AVG(rating_value)::NUMERIC, 2),
+        NOW()
+    FROM property_reviews
+    WHERE property_id = NEW.property_id AND status = 'published'
+    ON CONFLICT (property_id) DO UPDATE SET
+        total_reviews     = EXCLUDED.total_reviews,
+        avg_overall       = EXCLUDED.avg_overall,
+        avg_cleanliness   = EXCLUDED.avg_cleanliness,
+        avg_accuracy      = EXCLUDED.avg_accuracy,
+        avg_communication = EXCLUDED.avg_communication,
+        avg_location      = EXCLUDED.avg_location,
+        avg_value         = EXCLUDED.avg_value,
+        last_updated      = NOW();
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_refresh_review_stats
+    AFTER INSERT OR UPDATE OF status ON property_reviews
+    FOR EACH ROW
+    WHEN (NEW.status = 'published')
+    EXECUTE FUNCTION refresh_property_review_stats();
+
+
+
+
+
+    -----migrations for the messaging and everytingh
+
+
+
+
+
+    -- =============================================================================
+-- GETKEJA — Chat, Visit Schedules, Long-Term Bookings, Anti-Fraud Reviews
+-- Migration: run AFTER main schema and short-stay migration
+-- =============================================================================
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECTION 1: ENUMS
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TYPE conversation_type_enum AS ENUM (
+    'property_enquiry',    -- seeker asking about a listing
+    'visit_coordination',  -- scheduling a physical viewing
+    'booking_discussion',  -- tenancy / lease negotiation
+    'support'              -- admin support channel
+);
+
+CREATE TYPE message_type_enum AS ENUM (
+    'text',
+    'image',           -- Cloudinary URL
+    'document',        -- lease draft, ID, etc.
+    'visit_request',   -- structured visit request card
+    'booking_offer',   -- structured rent offer card
+    'system'           -- automated system message (booking confirmed, etc.)
+);
+
+CREATE TYPE visit_status_enum AS ENUM (
+    'requested',       -- seeker proposes a time
+    'confirmed',       -- host/agent accepts
+    'rescheduled',     -- either party proposes a new time
+    'cancelled',       -- cancelled by either party
+    'completed',       -- visit happened
+    'no_show_guest',   -- guest did not show up
+    'no_show_host'     -- host/agent did not show up
+);
+
+CREATE TYPE long_term_booking_status_enum AS ENUM (
+    'pending_review',  -- landlord reviewing application
+    'approved',        -- landlord accepted, awaiting deposit
+    'deposit_paid',    -- deposit received, tenancy active
+    'active',          -- tenant moved in
+    'notice_given',    -- either party issued notice
+    'terminated',      -- tenancy ended
+    'rejected'         -- landlord rejected application
+);
+
+CREATE TYPE tenancy_review_type_enum AS ENUM (
+    'tenant_reviews_property',
+    'tenant_reviews_landlord',
+    'landlord_reviews_tenant'
+);
+
+CREATE TYPE fraud_signal_enum AS ENUM (
+    'velocity_multiple_reviews',    -- same user reviewing many properties fast
+    'ip_cluster',                   -- multiple reviews from same IP range
+    'account_age_too_new',          -- account < 7 days old at time of review
+    'no_verified_interaction',      -- reviewer never had a booking/visit
+    'text_duplicate',               -- review text matches another review ≥ 80%
+    'rating_extreme_no_text',       -- 1 or 5 stars with no review text
+    'reciprocal_pattern'            -- mutual 5-star swap between two accounts
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECTION 2: CHAT SYSTEM
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- A conversation is always tied to a property and has exactly 2 participants
+-- (seeker + host/agent/caretaker). Support conversations may have an admin.
+CREATE TABLE conversations (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id       UUID REFERENCES properties (id) ON DELETE SET NULL,
+    type              conversation_type_enum NOT NULL DEFAULT 'property_enquiry',
+
+    -- Participants — denormalised for fast lookup
+    participant_a     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,  -- seeker
+    participant_b     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,  -- host/agent/admin
+
+    -- Last message cache (avoids JOIN on list view)
+    last_message_at   TIMESTAMPTZ,
+    last_message_text VARCHAR(200),          -- truncated preview
+
+    -- Unread counts per participant
+    unread_a          SMALLINT NOT NULL DEFAULT 0,
+    unread_b          SMALLINT NOT NULL DEFAULT 0,
+
+    -- Soft-archiving (hide from inbox without deleting)
+    archived_by_a     BOOLEAN NOT NULL DEFAULT FALSE,
+    archived_by_b     BOOLEAN NOT NULL DEFAULT FALSE,
+
+    is_blocked        BOOLEAN NOT NULL DEFAULT FALSE,
+    blocked_by        UUID REFERENCES users (id) ON DELETE SET NULL,
+
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Prevent duplicate conversations for the same property+pair
+    CONSTRAINT uq_conversation UNIQUE (property_id, participant_a, participant_b)
+);
+
+CREATE INDEX idx_conv_participant_a  ON conversations (participant_a, last_message_at DESC);
+CREATE INDEX idx_conv_participant_b  ON conversations (participant_b, last_message_at DESC);
+CREATE INDEX idx_conv_property       ON conversations (property_id);
+CREATE INDEX idx_conv_updated        ON conversations (updated_at DESC);
+
+
+CREATE TABLE messages (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id  UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    sender_id        UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    type             message_type_enum NOT NULL DEFAULT 'text',
+
+    -- Content
+    body             TEXT,                    -- text content or JSON payload for cards
+    media_url        TEXT,                    -- Cloudinary URL for image/document
+    media_mime_type  VARCHAR(100),
+    media_filename   VARCHAR(200),
+
+    -- Read receipts
+    read_by_recipient BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at           TIMESTAMPTZ,
+
+    -- Edit / delete
+    is_deleted        BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at        TIMESTAMPTZ,
+    edited_at         TIMESTAMPTZ,
+
+    -- Thread reference (reply-to)
+    reply_to_id       UUID REFERENCES messages (id) ON DELETE SET NULL,
+
+    -- Metadata for card messages (visit_request, booking_offer)
+    metadata          JSONB,
+
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_messages_conv    ON messages (conversation_id, created_at DESC);
+CREATE INDEX idx_messages_sender  ON messages (sender_id);
+CREATE INDEX idx_messages_unread  ON messages (conversation_id, read_by_recipient)
+    WHERE read_by_recipient = FALSE AND is_deleted = FALSE;
+
+-- Trigger: update conversations.last_message_at on every new message
+CREATE OR REPLACE FUNCTION update_conversation_on_message()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE conversations
+    SET
+        last_message_at   = NEW.created_at,
+        last_message_text = LEFT(COALESCE(NEW.body, ''), 200),
+        updated_at        = NOW(),
+        -- Increment unread for the recipient
+        unread_a = CASE
+            WHEN participant_b = NEW.sender_id THEN unread_a + 1
+            ELSE unread_a END,
+        unread_b = CASE
+            WHEN participant_a = NEW.sender_id THEN unread_b + 1
+            ELSE unread_b END
+    WHERE id = NEW.conversation_id;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_message_updates_conversation
+    AFTER INSERT ON messages
+    FOR EACH ROW EXECUTE FUNCTION update_conversation_on_message();
+
+
+-- Message reports (spam/abuse)
+CREATE TABLE message_reports (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    message_id      UUID NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
+    reported_by     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    reason          VARCHAR(200) NOT NULL,
+    reviewed        BOOLEAN NOT NULL DEFAULT FALSE,
+    reviewed_by     UUID REFERENCES users (id) ON DELETE SET NULL,
+    reviewed_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (message_id, reported_by)
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECTION 3: VISIT SCHEDULES (physical viewings for long-term / for-sale)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE visit_schedules (
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id          UUID NOT NULL REFERENCES properties (id) ON DELETE CASCADE,
+    seeker_user_id       UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    host_user_id         UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    conversation_id      UUID REFERENCES conversations (id) ON DELETE SET NULL,
+
+    -- The viewing_unlocks FK ensures the seeker paid/used credit before booking
+    unlock_id            UUID REFERENCES viewing_unlocks (id) ON DELETE SET NULL,
+
+    -- Proposed and confirmed times
+    proposed_datetime    TIMESTAMPTZ NOT NULL,
+    confirmed_datetime   TIMESTAMPTZ,         -- set when host confirms
+    actual_datetime      TIMESTAMPTZ,         -- set when visit is marked complete
+
+    status               visit_status_enum NOT NULL DEFAULT 'requested',
+
+    -- Reschedule tracking
+    reschedule_count     SMALLINT NOT NULL DEFAULT 0,
+    rescheduled_by       UUID REFERENCES users (id) ON DELETE SET NULL,
+    reschedule_reason    TEXT,
+
+    -- Visit details
+    visit_type           VARCHAR(20) NOT NULL DEFAULT 'in_person'
+                             CHECK (visit_type IN ('in_person', 'virtual')),
+    meeting_point        TEXT,       -- instructions from host
+    virtual_link         TEXT,       -- Zoom/Google Meet link for virtual tours
+    duration_minutes     SMALLINT NOT NULL DEFAULT 30,
+    notes_from_seeker    TEXT,
+    notes_from_host      TEXT,
+
+    -- Outcome
+    outcome_notes        TEXT,       -- post-visit notes
+    cancelled_reason     TEXT,
+    cancelled_by         UUID REFERENCES users (id) ON DELETE SET NULL,
+
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_visits_property   ON visit_schedules (property_id);
+CREATE INDEX idx_visits_seeker     ON visit_schedules (seeker_user_id);
+CREATE INDEX idx_visits_host       ON visit_schedules (host_user_id);
+CREATE INDEX idx_visits_status     ON visit_schedules (status);
+CREATE INDEX idx_visits_datetime   ON visit_schedules (proposed_datetime);
+
+-- Prevent double-booking: a seeker cannot have two active visits for the same property
+CREATE UNIQUE INDEX idx_visits_active_unique
+    ON visit_schedules (property_id, seeker_user_id)
+    WHERE status IN ('requested', 'confirmed', 'rescheduled');
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECTION 4: LONG-TERM BOOKINGS (rental applications + tenancy)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE long_term_bookings (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    property_id           UUID NOT NULL REFERENCES properties (id) ON DELETE RESTRICT,
+    tenant_user_id        UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    landlord_user_id      UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    conversation_id       UUID REFERENCES conversations (id) ON DELETE SET NULL,
+
+    -- Application details
+    desired_move_in       DATE NOT NULL,
+    lease_duration_months SMALLINT NOT NULL DEFAULT 12,
+    occupants_count       SMALLINT NOT NULL DEFAULT 1,
+    has_pets              BOOLEAN NOT NULL DEFAULT FALSE,
+    pets_description      TEXT,
+    employment_status     VARCHAR(50),
+    monthly_income_kes    DECIMAL(12,2),
+    cover_letter          TEXT,
+
+    -- Agreed terms (set when landlord approves)
+    agreed_monthly_rent_kes  DECIMAL(12,2),
+    agreed_deposit_kes       DECIMAL(12,2),
+    agreed_move_in_date      DATE,
+    lease_start_date         DATE,
+    lease_end_date           DATE,
+
+    -- Deposit tracking
+    deposit_paid_at          TIMESTAMPTZ,
+    deposit_mpesa_ref        VARCHAR(50),
+    deposit_amount_paid_kes  DECIMAL(12,2),
+
+    -- Status
+    status                   long_term_booking_status_enum NOT NULL DEFAULT 'pending_review',
+    rejection_reason         TEXT,
+    notice_given_at          DATE,
+    notice_given_by          UUID REFERENCES users (id) ON DELETE SET NULL,
+    termination_date         DATE,
+    termination_reason       TEXT,
+
+    -- Documents (Cloudinary URLs)
+    lease_document_url       TEXT,
+    id_document_url          TEXT,
+
+    -- Reference (shown to tenant)
+    booking_ref              VARCHAR(20) UNIQUE NOT NULL DEFAULT
+                                 'LT-' || UPPER(SUBSTRING(gen_random_uuid()::TEXT FROM 1 FOR 8)),
+
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_lt_bookings_property  ON long_term_bookings (property_id);
+CREATE INDEX idx_lt_bookings_tenant    ON long_term_bookings (tenant_user_id);
+CREATE INDEX idx_lt_bookings_landlord  ON long_term_bookings (landlord_user_id);
+CREATE INDEX idx_lt_bookings_status    ON long_term_bookings (status);
+
+-- Prevent a property having two active tenancies
+CREATE UNIQUE INDEX idx_lt_bookings_active_property
+    ON long_term_bookings (property_id)
+    WHERE status IN ('approved', 'deposit_paid', 'active');
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECTION 5: ANTI-FRAUD REVIEW SYSTEM
+--
+-- Design principles:
+--   1. Verified interaction requirement — reviewer MUST have a linked booking
+--      or completed visit (no anonymous reviews, no "walk-in" reviews)
+--   2. Review holds — new reviews enter 'pending' and are auto-published after
+--      24h unless a fraud signal fires during that window
+--   3. Fraud signals — computed at submission time and stored; any HIGH-confidence
+--      signal sends the review to 'held_for_moderation' instead of 'pending'
+--   4. One review per verified interaction — enforced by UNIQUE on
+--      (reviewer_id, interaction_id) where interaction_id is the booking/visit
+--   5. Cooling-off period — 48h after checkout/visit before review allowed
+--      (prevents rage-reviews, gives time for reflection)
+--   6. Mutual review blind — both parties submit independently; neither sees
+--      the other's review until both have submitted OR the 14-day window closes
+--   7. Edit window — reviewer can edit within 48h of submission
+--   8. Platform fee: 0 — reviews are never gated behind payment to prevent bias
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TYPE unified_review_status_enum AS ENUM (
+    'pending',                 -- submitted, within 24h auto-publish window
+    'published',               -- visible to all
+    'held_for_moderation',     -- fraud signal fired, awaiting admin review
+    'blind_pending',           -- waiting for both parties to submit (mutual blind)
+    'rejected',                -- admin rejected after review
+    'removed_violation'        -- removed post-publication for policy violation
+);
+
+CREATE TABLE unified_reviews (
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    review_type             tenancy_review_type_enum NOT NULL,
+
+    -- Who is reviewing whom / what
+    reviewer_id             UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    reviewee_id             UUID REFERENCES users (id) ON DELETE CASCADE,   -- null for property reviews
+    property_id             UUID REFERENCES properties (id) ON DELETE CASCADE,
+
+    -- VERIFIED INTERACTION REQUIREMENT
+    -- Exactly ONE of these must be non-null — enforced by CHECK below
+    visit_id                UUID REFERENCES visit_schedules (id) ON DELETE RESTRICT,
+    long_term_booking_id    UUID REFERENCES long_term_bookings (id) ON DELETE RESTRICT,
+    short_stay_booking_id   UUID REFERENCES short_stay_bookings (id) ON DELETE RESTRICT,
+
+    -- Ratings (1–5)
+    rating_overall          SMALLINT NOT NULL CHECK (rating_overall BETWEEN 1 AND 5),
+    rating_cleanliness      SMALLINT CHECK (rating_cleanliness BETWEEN 1 AND 5),
+    rating_communication    SMALLINT CHECK (rating_communication BETWEEN 1 AND 5),
+    rating_accuracy         SMALLINT CHECK (rating_accuracy BETWEEN 1 AND 5),
+    rating_value            SMALLINT CHECK (rating_value BETWEEN 1 AND 5),
+    rating_location         SMALLINT CHECK (rating_location BETWEEN 1 AND 5),
+    -- Landlord/tenant specific
+    rating_maintenance      SMALLINT CHECK (rating_maintenance BETWEEN 1 AND 5),
+    rating_responsiveness   SMALLINT CHECK (rating_responsiveness BETWEEN 1 AND 5),
+    rating_house_rules      SMALLINT CHECK (rating_house_rules BETWEEN 1 AND 5),
+
+    review_text             TEXT CHECK (
+                                -- Require text for extreme ratings to reduce noise
+                                rating_overall BETWEEN 2 AND 4
+                                OR (review_text IS NOT NULL AND LENGTH(review_text) >= 20)
+                            ),
+
+    -- Public reply from reviewee
+    reply_text              TEXT,
+    replied_at              TIMESTAMPTZ,
+
+    -- Status & moderation
+    status                  unified_review_status_enum NOT NULL DEFAULT 'pending',
+    auto_publish_at         TIMESTAMPTZ,    -- 24h after submission if no fraud signal
+    published_at            TIMESTAMPTZ,
+    moderated_by            UUID REFERENCES users (id) ON DELETE SET NULL,
+    moderation_notes        TEXT,
+
+    -- Mutual blind tracking (for landlord↔tenant pairs)
+    blind_pair_review_id    UUID REFERENCES unified_reviews (id) ON DELETE SET NULL,
+    both_submitted          BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Edit window (48h from submission)
+    last_edited_at          TIMESTAMPTZ,
+    edit_count              SMALLINT NOT NULL DEFAULT 0,
+
+    -- Submission metadata for fraud detection
+    submitted_ip            INET,
+    submitted_user_agent    TEXT,
+    account_age_days_at_submission  INTEGER,  -- computed at insert
+    reviewer_total_reviews_at_submission INTEGER,
+
+    submitted_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- ── Constraints ──────────────────────────────────────────────────────
+    -- Exactly one interaction source
+    CONSTRAINT chk_one_interaction CHECK (
+        (CASE WHEN visit_id IS NOT NULL THEN 1 ELSE 0 END
+         + CASE WHEN long_term_booking_id IS NOT NULL THEN 1 ELSE 0 END
+         + CASE WHEN short_stay_booking_id IS NOT NULL THEN 1 ELSE 0 END) = 1
+    ),
+    -- One review per reviewer per interaction source
+    CONSTRAINT uq_review_per_visit         UNIQUE (reviewer_id, visit_id),
+    CONSTRAINT uq_review_per_lt_booking    UNIQUE (reviewer_id, long_term_booking_id),
+    CONSTRAINT uq_review_per_st_booking    UNIQUE (reviewer_id, short_stay_booking_id)
+);
+
+CREATE INDEX idx_reviews_property    ON unified_reviews (property_id)  WHERE status = 'published';
+CREATE INDEX idx_reviews_reviewee    ON unified_reviews (reviewee_id)  WHERE status = 'published';
+CREATE INDEX idx_reviews_reviewer    ON unified_reviews (reviewer_id);
+CREATE INDEX idx_reviews_status      ON unified_reviews (status);
+CREATE INDEX idx_reviews_auto_pub    ON unified_reviews (auto_publish_at) WHERE status = 'pending';
+
+
+-- Fraud signals table — one row per signal per review
+CREATE TABLE review_fraud_signals (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    review_id   UUID NOT NULL REFERENCES unified_reviews (id) ON DELETE CASCADE,
+    signal      fraud_signal_enum NOT NULL,
+    confidence  VARCHAR(10) NOT NULL CHECK (confidence IN ('low','medium','high')),
+    detail      TEXT,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved    BOOLEAN NOT NULL DEFAULT FALSE,
+    resolved_by UUID REFERENCES users (id) ON DELETE SET NULL,
+    resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_fraud_signals_review   ON review_fraud_signals (review_id);
+CREATE INDEX idx_fraud_signals_unresolved ON review_fraud_signals (resolved) WHERE resolved = FALSE;
+
+
+-- Review aggregate (materialised, updated by trigger — one row per property)
+CREATE TABLE review_aggregates (
+    property_id           UUID PRIMARY KEY REFERENCES properties (id) ON DELETE CASCADE,
+    total_reviews         INTEGER NOT NULL DEFAULT 0,
+    avg_overall           DECIMAL(3,2),
+    avg_cleanliness       DECIMAL(3,2),
+    avg_communication     DECIMAL(3,2),
+    avg_accuracy          DECIMAL(3,2),
+    avg_value             DECIMAL(3,2),
+    avg_location          DECIMAL(3,2),
+    avg_maintenance       DECIMAL(3,2),
+    avg_responsiveness    DECIMAL(3,2),
+    pct_five_star         DECIMAL(5,2),
+    pct_one_star          DECIMAL(5,2),
+    last_updated          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION refresh_review_aggregates()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.property_id IS NULL THEN RETURN NEW; END IF;
+
+    INSERT INTO review_aggregates (
+        property_id, total_reviews,
+        avg_overall, avg_cleanliness, avg_communication,
+        avg_accuracy, avg_value, avg_location,
+        avg_maintenance, avg_responsiveness,
+        pct_five_star, pct_one_star, last_updated
+    )
+    SELECT
+        NEW.property_id,
+        COUNT(*),
+        ROUND(AVG(rating_overall)::NUMERIC, 2),
+        ROUND(AVG(rating_cleanliness)::NUMERIC, 2),
+        ROUND(AVG(rating_communication)::NUMERIC, 2),
+        ROUND(AVG(rating_accuracy)::NUMERIC, 2),
+        ROUND(AVG(rating_value)::NUMERIC, 2),
+        ROUND(AVG(rating_location)::NUMERIC, 2),
+        ROUND(AVG(rating_maintenance)::NUMERIC, 2),
+        ROUND(AVG(rating_responsiveness)::NUMERIC, 2),
+        ROUND(100.0 * COUNT(*) FILTER (WHERE rating_overall = 5) / NULLIF(COUNT(*), 0), 2),
+        ROUND(100.0 * COUNT(*) FILTER (WHERE rating_overall = 1) / NULLIF(COUNT(*), 0), 2),
+        NOW()
+    FROM unified_reviews
+    WHERE property_id = NEW.property_id AND status = 'published'
+    ON CONFLICT (property_id) DO UPDATE SET
+        total_reviews      = EXCLUDED.total_reviews,
+        avg_overall        = EXCLUDED.avg_overall,
+        avg_cleanliness    = EXCLUDED.avg_cleanliness,
+        avg_communication  = EXCLUDED.avg_communication,
+        avg_accuracy       = EXCLUDED.avg_accuracy,
+        avg_value          = EXCLUDED.avg_value,
+        avg_location       = EXCLUDED.avg_location,
+        avg_maintenance    = EXCLUDED.avg_maintenance,
+        avg_responsiveness = EXCLUDED.avg_responsiveness,
+        pct_five_star      = EXCLUDED.pct_five_star,
+        pct_one_star       = EXCLUDED.pct_one_star,
+        last_updated       = NOW();
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_refresh_review_aggregates
+    AFTER INSERT OR UPDATE OF status ON unified_reviews
+    FOR EACH ROW
+    WHEN (NEW.status = 'published')
+    EXECUTE FUNCTION refresh_review_aggregates();
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECTION 6: SCHEDULED JOB HELPERS
+-- Run these via pg_cron or your application cron layer
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Auto-publish reviews that passed the 24h fraud window
+CREATE OR REPLACE FUNCTION auto_publish_pending_reviews()
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE unified_reviews
+    SET
+        status       = 'published',
+        published_at = NOW()
+    WHERE
+        status          = 'pending'
+        AND auto_publish_at IS NOT NULL
+        AND auto_publish_at <= NOW();
+END;
+$$;
+-- Schedule: SELECT cron.schedule('*/15 * * * *', 'SELECT auto_publish_pending_reviews()');
+
+
+-- Reveal mutual blind reviews once both parties have submitted OR window closes
+CREATE OR REPLACE FUNCTION reveal_blind_reviews()
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    -- Mark pairs where both have submitted
+    UPDATE unified_reviews r1
+    SET both_submitted = TRUE
+    FROM unified_reviews r2
+    WHERE
+        r1.blind_pair_review_id = r2.id
+        AND r2.blind_pair_review_id = r1.id
+        AND r1.status IN ('blind_pending', 'pending')
+        AND r2.status IN ('blind_pending', 'pending');
+
+    -- Publish pairs where both submitted
+    UPDATE unified_reviews
+    SET status = 'pending', auto_publish_at = NOW() + INTERVAL '1 hour'
+    WHERE status = 'blind_pending' AND both_submitted = TRUE;
+END;
+$$;
+-- Schedule: SELECT cron.schedule('0 * * * *', 'SELECT reveal_blind_re
+
+----landlord
+
+
+-- Step 1: Run the migration from auth.service.ts
+
+-- -- Fix #5: previous_token_hash column
+-- ALTER TABLE user_sessions
+--   ADD COLUMN IF NOT EXISTS previous_token_hash TEXT DEFAULT NULL;
+
+-- CREATE INDEX IF NOT EXISTS idx_user_sessions_previous_token_hash
+--   ON user_sessions (previous_token_hash)
+--   WHERE previous_token_hash IS NOT NULL;
+
+-- -- Fix #6: resend cooldown column
+-- ALTER TABLE users
+--   ADD COLUMN IF NOT EXISTS email_verify_last_sent TIMESTAMPTZ DEFAULT NULL;
+
+-- -- Fix #1: atomic registration function
+-- CREATE OR REPLACE FUNCTION register_user(
+--   p_email              TEXT,
+--   p_phone              TEXT,
+--   p_password_hash      TEXT,
+--   p_full_name          TEXT,
+--   p_verify_token_hash  TEXT,
+--   p_verify_token_expires TIMESTAMPTZ
+-- )
+-- RETURNS TABLE (
+--   id             UUID,
+--   email          TEXT,
+--   account_status TEXT,
+--   created        BOOLEAN
+-- )
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- AS $$
+-- DECLARE
+--   v_user_id      UUID;
+--   v_seeker_id    UUID;
+--   v_created      BOOLEAN := FALSE;
+-- BEGIN
+--   SELECT u.id INTO v_user_id
+--   FROM users u
+--   WHERE lower(u.email) = lower(p_email)
+--   LIMIT 1;
+
+--   IF v_user_id IS NULL THEN
+--     INSERT INTO users (
+--       email, phone_number, password_hash, auth_provider,
+--       account_status, email_verified,
+--       email_verify_token, email_verify_expires
+--     ) VALUES (
+--       lower(p_email), p_phone, p_password_hash, 'local',
+--       'pending_verify', FALSE,
+--       p_verify_token_hash, p_verify_token_expires
+--     )
+--     RETURNING users.id INTO v_user_id;
+
+--     SELECT r.id INTO v_seeker_id FROM roles r WHERE r.name = 'seeker' LIMIT 1;
+--     IF v_seeker_id IS NOT NULL THEN
+--       INSERT INTO user_roles (user_id, role_id)
+--       VALUES (v_user_id, v_seeker_id)
+--       ON CONFLICT (user_id, role_id) DO NOTHING;
+--     END IF;
+
+--     INSERT INTO user_profiles (user_id, full_name)
+--     VALUES (v_user_id, p_full_name)
+--     ON CONFLICT (user_id) DO NOTHING;
+
+--     v_created := TRUE;
+--   END IF;
+
+--   RETURN QUERY
+--   SELECT u.id, u.email, u.account_status::TEXT, v_created
+--   FROM users u
+--   WHERE u.id = v_user_id;
+-- END;
+-- $$;
+
+-- REVOKE ALL ON FUNCTION register_user FROM PUBLIC;
+-- GRANT EXECUTE ON FUNCTION register_user TO service_role;
+
+
+
+
+-- =============================================================================
+-- GETKEJA — Auth Security Migration
+-- Run this in Supabase Dashboard → SQL Editor
+-- =============================================================================
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Fix #5: previous_token_hash column on user_sessions
+-- (rotation detection — prevents stolen-token replay)
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE user_sessions
+  ADD COLUMN IF NOT EXISTS previous_token_hash TEXT DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_previous_token_hash
+  ON user_sessions (previous_token_hash)
+  WHERE previous_token_hash IS NOT NULL;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Fix #6: track when last verification email was sent
+-- (per-user 60-second cooldown to prevent email-bombing)
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS email_verify_last_sent TIMESTAMPTZ DEFAULT NULL;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Fix #1: atomic registration stored procedure
+-- Wraps user + role + profile inserts in a single transaction.
+-- If any step fails, the whole thing rolls back.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.register_user(
+  p_email                TEXT,
+  p_phone                TEXT,
+  p_password_hash        TEXT,
+  p_full_name            TEXT,
+  p_verify_token_hash    TEXT,
+  p_verify_token_expires TIMESTAMPTZ
+)
+RETURNS TABLE (
+  id             UUID,
+  email          TEXT,
+  account_status TEXT,
+  created        BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id   UUID;
+  v_seeker_id SMALLINT;
+  v_created   BOOLEAN := FALSE;
+BEGIN
+  -- Check for existing email (case-insensitive)
+  SELECT u.id INTO v_user_id
+  FROM users u
+  WHERE lower(u.email) = lower(p_email)
+  LIMIT 1;
+
+  IF v_user_id IS NULL THEN
+    -- 1. Insert the user row
+    INSERT INTO users (
+      email,
+      phone_number,
+      password_hash,
+      auth_provider,
+      account_status,
+      email_verified,
+      email_verify_token,
+      email_verify_expires
+    ) VALUES (
+      lower(p_email),
+      p_phone,
+      p_password_hash,
+      'local',
+      'pending_verify',
+      FALSE,
+      p_verify_token_hash,
+      p_verify_token_expires
+    )
+    RETURNING users.id INTO v_user_id;
+
+    -- 2. Assign the seeker role
+    SELECT r.id INTO v_seeker_id
+    FROM roles r
+    WHERE r.name = 'seeker'
+    LIMIT 1;
+
+    IF v_seeker_id IS NOT NULL THEN
+      INSERT INTO user_roles (user_id, role_id)
+      VALUES (v_user_id, v_seeker_id)
+      ON CONFLICT (user_id, role_id) DO NOTHING;
+    END IF;
+
+    -- 3. Create the user profile row
+    INSERT INTO user_profiles (user_id, full_name)
+    VALUES (v_user_id, p_full_name)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    v_created := TRUE;
+  END IF;
+
+  -- Always return the user row (whether newly created or pre-existing)
+  RETURN QUERY
+  SELECT
+    u.id,
+    u.email,
+    u.account_status::TEXT,
+    v_created
+  FROM users u
+  WHERE u.id = v_user_id;
+END;
+$$;
+
+-- Restrict access: only the Supabase service role may call this function.
+-- The anon and authenticated roles cannot call it directly.
+REVOKE ALL ON FUNCTION public.register_user(TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.register_user(TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
+
+
+
+
+
+
+
+
+
+-- Step 1: Drop the existing function completely
+DROP FUNCTION IF EXISTS public.register_user(TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ);
+
+-- Step 2: Recreate with explicit casts to avoid any type mismatch
+CREATE OR REPLACE FUNCTION public.register_user(
+  p_email                TEXT,
+  p_phone                TEXT,
+  p_password_hash        TEXT,
+  p_full_name            TEXT,
+  p_verify_token_hash    TEXT,
+  p_verify_token_expires TIMESTAMPTZ
+)
+RETURNS TABLE (
+  id             UUID,
+  email          TEXT,
+  account_status TEXT,
+  created        BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id   UUID;
+  v_seeker_id SMALLINT;
+  v_created   BOOLEAN := FALSE;
+BEGIN
+  SELECT u.id INTO v_user_id
+  FROM users u
+  WHERE lower(u.email) = lower(p_email)
+  LIMIT 1;
+
+  IF v_user_id IS NULL THEN
+    INSERT INTO users (
+      email, phone_number, password_hash, auth_provider,
+      account_status, email_verified,
+      email_verify_token, email_verify_expires
+    ) VALUES (
+      lower(p_email), p_phone, p_password_hash, 'local',
+      'pending_verify', FALSE,
+      p_verify_token_hash, p_verify_token_expires
+    )
+    RETURNING users.id INTO v_user_id;
+
+    SELECT r.id INTO v_seeker_id FROM roles r WHERE r.name = 'seeker' LIMIT 1;
+    IF v_seeker_id IS NOT NULL THEN
+      INSERT INTO user_roles (user_id, role_id)
+      VALUES (v_user_id, v_seeker_id)
+      ON CONFLICT (user_id, role_id) DO NOTHING;
+    END IF;
+
+    INSERT INTO user_profiles (user_id, full_name)
+    VALUES (v_user_id, p_full_name)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    v_created := TRUE;
+  END IF;
+
+  -- Cast both columns explicitly to TEXT to match the RETURNS TABLE declaration
+  RETURN QUERY
+  SELECT
+    u.id,
+    u.email::TEXT,
+    u.account_status::TEXT,
+    v_created
+  FROM users u
+  WHERE u.id = v_user_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.register_user(TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.register_user(TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
+
+
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Promote a user to super_admin
+-- Replace the email below with the actual user's email
+-- ─────────────────────────────────────────────────────────────────────────────
+
+DO $$
+DECLARE
+  v_user_id    UUID;
+  v_role_id    SMALLINT;
+BEGIN
+  -- 1. Find the user
+  SELECT id INTO v_user_id
+  FROM users
+  WHERE lower(email) = lower('simongatungo300@gmail.com')  -- ← change this
+    AND deleted_at IS NULL
+  LIMIT 1;
+
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'User not found';
+  END IF;
+
+  -- 2. Get the super_admin role id
+  SELECT id INTO v_role_id
+  FROM roles
+  WHERE name = 'super_admin'
+  LIMIT 1;
+
+  IF v_role_id IS NULL THEN
+    RAISE EXCEPTION 'super_admin role not found in roles table';
+  END IF;
+
+  -- 3. Assign the role (upsert — safe to run multiple times)
+  INSERT INTO user_roles (user_id, role_id, is_active, verified_at, assigned_at)
+  VALUES (v_user_id, v_role_id, TRUE, NOW(), NOW())
+  ON CONFLICT (user_id, role_id)
+  DO UPDATE SET
+    is_active   = TRUE,
+    verified_at = NOW();
+
+  -- 4. Activate the account in case it's still pending_verify
+  UPDATE users
+  SET
+    account_status = 'active',
+    email_verified = TRUE
+  WHERE id = v_user_id;
+
+  RAISE NOTICE 'User % promoted to super_admin successfully', v_user_id;
+END;
+$$;
+
+
+---promote user to stataff
+
+DO $$
+DECLARE
+  v_user_id UUID;
+  v_role_id SMALLINT;
+BEGIN
+  SELECT id INTO v_user_id
+  FROM users
+  WHERE lower(email) = lower('Inventorscience126@gmail.com')  -- ← change this
+    AND deleted_at IS NULL
+  LIMIT 1;
+
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'User not found';
+  END IF;
+
+  SELECT id INTO v_role_id
+  FROM roles
+  WHERE name = 'staff'  -- ← change role here if needed
+  LIMIT 1;
+
+  IF v_role_id IS NULL THEN
+    RAISE EXCEPTION 'Role not found in roles table';
+  END IF;
+
+  INSERT INTO user_roles (user_id, role_id, is_active, verified_at, assigned_at)
+  VALUES (v_user_id, v_role_id, TRUE, NOW(), NOW())
+  ON CONFLICT (user_id, role_id)
+  DO UPDATE SET
+    is_active   = TRUE,
+    verified_at = NOW();
+
+  UPDATE users
+  SET
+    account_status = 'active',
+    email_verified = TRUE
+  WHERE id = v_user_id;
+
+  RAISE NOTICE 'User % promoted to staff successfully', v_user_id;
+END;
+$$;
