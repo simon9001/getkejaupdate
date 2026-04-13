@@ -580,6 +580,9 @@ export class PropertiesService {
         offplan_details (
           id, project_name, developer_name, completion_quarter, construction_pct,
           total_units_in_project, units_sold, payment_plan, escrow_bank, nca_reg_number
+        ),
+        owner:users!properties_created_by_fkey (
+          id, full_name, avatar_url, is_verified
         )
       `)
       .eq('id', propertyId)

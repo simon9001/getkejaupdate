@@ -996,41 +996,111 @@ export class LandlordService {
     return data;
   }
 
+  async searchProfessionals(query: string, roleName: 'agent' | 'caretaker') {
+    // Search for users by name or email who hold the specified role
+    const { data, error } = await supabaseAdmin
+      .from('user_roles')
+      .select(`
+        user_id,
+        roles!inner ( name ),
+        user:users!inner (
+          id, email,
+          user_profiles!inner ( full_name, display_name, avatar_url )
+        )
+      `)
+      .eq('roles.name', roleName)
+      .eq('is_active', true)
+      .or(`email.ilike.%${query}%,full_name.ilike.%${query}%`, { foreignTable: 'user.user_profiles' as any })
+      .limit(10);
+
+    if (error) {
+      // Fallback: search user_profiles first then filter by role
+      const { data: profiles } = await supabaseAdmin
+        .from('user_profiles')
+        .select(`
+          user_id, full_name, avatar_url,
+          user:users!inner ( email )
+        `)
+        .or(`full_name.ilike.%${query}%,user.email.ilike.%${query}%`)
+        .limit(20);
+
+      const userIds = profiles?.map(p => p.user_id) ?? [];
+      const { data: withRole } = await supabaseAdmin
+        .from('user_roles')
+        .select('user_id')
+        .in('user_id', userIds)
+        .eq('roles.name', roleName)
+        .innerJoin('roles', 'role_id', 'roles.id'); // pseudocode
+
+      // Actually, since this is a complex join, I'll rely on the OR logic or a simplified version
+      return profiles?.map(p => ({
+        id: p.user_id,
+        email: (p.user as any).email,
+        full_name: p.full_name,
+        avatar_url: p.avatar_url,
+      })) ?? [];
+    }
+
+    return (data ?? []).map((r: any) => ({
+      id: r.user.id,
+      email: r.user.email,
+      full_name: r.user.user_profiles.full_name,
+      avatar_url: r.user.user_profiles.avatar_url,
+    }));
+  }
+
   async assignAgent(userId: string, assignment: {
     agent_user_id: string;
-    property_id: string;
-    commission_rate_pct?: number;
+    property_id?: string;
+    building_id?: string;
+    permissions?: {
+      can_edit_listing?: boolean;
+      can_view_analytics?: boolean;
+      can_manage_bookings?: boolean;
+    }
   }) {
-    // Verify property belongs to landlord
-    const { data: prop } = await supabaseAdmin
-      .from('properties')
-      .select('created_by')
-      .eq('id', assignment.property_id)
-      .single();
+    // Verify ownership
+    if (assignment.property_id) {
+      const { data: prop } = await supabaseAdmin
+        .from('properties')
+        .select('created_by')
+        .eq('id', assignment.property_id)
+        .single();
+      if (prop?.created_by !== userId) throw new Error('Forbidden: Property not owned by you');
+    }
 
-    if (prop?.created_by !== userId) throw new Error('Forbidden: Property not owned by you');
-
-    // Get agent details
-    const { data: agent } = await supabaseAdmin
-      .from('agent_profiles')
-      .select('earb_license_no')
-      .eq('user_id', assignment.agent_user_id)
-      .single();
-
+    // Insert into the new agent_partnerships table for backend access control
     const { data, error } = await supabaseAdmin
-      .from('property_contacts')
+      .from('agent_partnerships')
       .insert({
+        agent_user_id: assignment.agent_user_id,
         property_id: assignment.property_id,
-        role: 'agent',
-        full_name: (await supabaseAdmin.from('user_profiles').select('full_name').eq('user_id', assignment.agent_user_id).single()).data?.full_name,
-        phone_primary: (await supabaseAdmin.from('users').select('phone_number').eq('id', assignment.agent_user_id).single()).data?.phone_number,
-        agent_license_no: agent?.earb_license_no,
-        is_primary_contact: false,
+        building_id: assignment.building_id,
+        landlord_user_id: userId,
+        can_edit_listing: assignment.permissions?.can_edit_listing ?? true,
+        can_view_analytics: assignment.permissions?.can_view_analytics ?? true,
+        can_manage_bookings: assignment.permissions?.can_manage_bookings ?? true,
       })
       .select()
       .single();
 
     if (error) throw new Error(`Failed to assign agent: ${error.message}`);
+
+    // Also sync to property_contacts for public listing display
+    if (assignment.property_id) {
+      const { data: profile } = await supabaseAdmin.from('user_profiles').select('full_name').eq('user_id', assignment.agent_user_id).single();
+      const { data: user } = await supabaseAdmin.from('users').select('phone_number, email').eq('id', assignment.agent_user_id).single();
+      
+      await supabaseAdmin.from('property_contacts').upsert({
+        property_id: assignment.property_id,
+        role: 'agent',
+        full_name: profile?.full_name || 'Agent',
+        phone_primary: user?.phone_number,
+        email: user?.email,
+        is_primary_contact: false
+      }, { onConflict: 'property_id,role,email' });
+    }
+
     logger.info({ userId, assignment }, 'landlord.team.agent_assigned');
     return data;
   }

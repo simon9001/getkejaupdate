@@ -36,6 +36,7 @@
 
 import { supabaseAdmin } from '../utils/supabase.js';
 import { logger }        from '../utils/logger.js';
+import { emailService }   from '../utils/email.service.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -1309,10 +1310,16 @@ export class AdminService {
    * 2. Assign the requested role to the user.
    */
   async approveVerification(verificationId: string, adminId: string) {
-    // Fetch the verification record to get user_id and requested_role
+    // Fetch the verification record to get user_id and requested_role, plus user info for email
     const { data: ver, error: fetchErr } = await supabaseAdmin
       .from('id_verifications')
-      .select('id, user_id, requested_role, status')
+      .select(`
+        id, user_id, requested_role, status,
+        users:user_id (
+          email,
+          user_profiles ( full_name )
+        )
+      `)
       .eq('id', verificationId)
       .single();
 
@@ -1331,30 +1338,50 @@ export class AdminService {
 
     if (approveErr) throw new Error(`Failed to approve verification: ${approveErr.message}`);
 
-    // Assign the role to the user if requested_role is present
     const requestedRole: string | null = (ver as any).requested_role ?? null;
     if (requestedRole) {
-      // Look up role id
-      const { data: roleRow } = await supabaseAdmin
+      // Look up IDs for the new role AND the seeker role to perform the swap
+      const { data: rolesArr } = await supabaseAdmin
         .from('roles')
-        .select('id')
-        .eq('name', requestedRole)
-        .single();
+        .select('id, name')
+        .in('name', [requestedRole, 'seeker']);
 
-      if (roleRow) {
-        // Upsert the user_roles row (set is_active=true, verified_at=now)
+      const newRoleRow    = rolesArr?.find(r => r.name === requestedRole);
+      const seekerRoleRow = rolesArr?.find(r => r.name === 'seeker');
+
+      if (newRoleRow) {
+        // 1. Grant the new professional role
         await supabaseAdmin
           .from('user_roles')
           .upsert(
             {
               user_id:     ver.user_id,
-              role_id:     roleRow.id,
+              role_id:     newRoleRow.id,
               is_active:   true,
               verified_at: new Date().toISOString(),
             },
             { onConflict: 'user_id,role_id' },
           );
+
+        // 2. REMOVE the seeker role (as requested by user)
+        if (seekerRoleRow) {
+          await supabaseAdmin
+            .from('user_roles')
+            .delete()
+            .eq('user_id', ver.user_id)
+            .eq('role_id', seekerRoleRow.id);
+        }
       }
+    }
+
+    // Send Approval Email
+    const userData = (ver as any).users;
+    if (userData?.email) {
+      await emailService.sendVerificationApprovedEmail(
+        userData.email,
+        userData.user_profiles?.full_name || 'Member',
+        requestedRole || 'Professional',
+      ).catch(err => logger.error({ err, userId: ver.user_id }, 'admin.approve.email_failed'));
     }
 
     logger.info({ verificationId, adminId, requestedRole }, 'admin.verification.approved');
@@ -1367,7 +1394,13 @@ export class AdminService {
   async rejectVerification(verificationId: string, adminId: string, reason: string) {
     const { data: ver, error: fetchErr } = await supabaseAdmin
       .from('id_verifications')
-      .select('id, status')
+      .select(`
+        id, status, user_id,
+        users:user_id (
+          email,
+          user_profiles ( full_name )
+        )
+      `)
       .eq('id', verificationId)
       .single();
 
@@ -1385,6 +1418,17 @@ export class AdminService {
       .eq('id', verificationId);
 
     if (error) throw new Error(`Failed to reject verification: ${error.message}`);
+
+    // Send Rejection Email
+    const userData = (ver as any).users;
+    if (userData?.email) {
+      await emailService.sendVerificationRejectedEmail(
+        userData.email,
+        userData.user_profiles?.full_name || 'Member',
+        reason,
+      ).catch(err => logger.error({ err, userId: ver.user_id }, 'admin.reject.email_failed'));
+    }
+
     logger.info({ verificationId, adminId, reason }, 'admin.verification.rejected');
     return { success: true };
   }

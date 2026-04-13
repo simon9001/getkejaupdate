@@ -262,6 +262,64 @@ export class EmailService {
 
     return this.sendEmail({ to: email, subject, html: this.wrap('Security', 'Alert', body) });
   }
+
+  async sendVerificationApprovedEmail(email: string, fullName: string, role: string): Promise<{ id: string }> {
+    const dashboardUrl = `${this.baseUrl()}/dashboard`;
+    const roleDisplay = role.charAt(0).toUpperCase() + role.slice(1).replace('_', ' ');
+
+    const body = `
+      <div style="text-align:center">
+        <span style="background:#C6F6D5;color:#22543D;padding:10px 22px;border-radius:50px;font-weight:600;font-size:13px">🎊 Account Verified</span>
+      </div>
+      <h2>Congratulations ${fullName}!</h2>
+      <p>Your identity verification has been approved by the Getkeja staff.</p>
+      <p>Your account has been upgraded to a <strong>${roleDisplay}</strong> role. You now have full access to your professional dashboard.</p>
+      <div style="background:#FCFAF2;padding:24px;border-radius:14px;margin:24px 0">
+        <div style="display:flex;align-items:center;margin-bottom:12px">
+          <div style="font-size:20px;margin-right:12px">🏠</div>
+          <div><strong>Property Management</strong><br><span style="font-size:12px;color:#718096">List and manage your properties</span></div>
+        </div>
+        <div style="display:flex;align-items:center;margin-bottom:12px">
+          <div style="font-size:20px;margin-right:12px">📈</div>
+          <div><strong>Insightful Analytics</strong><br><span style="font-size:12px;color:#718096">Track your revenue and performance</span></div>
+        </div>
+        <div style="display:flex;align-items:center">
+          <div style="font-size:20px;margin-right:12px">🤝</div>
+          <div><strong>Team Collaboration</strong><br><span style="font-size:12px;color:#718096">Add Agents and Caretakers to your team</span></div>
+        </div>
+      </div>
+      <div style="text-align:center"><a href="${dashboardUrl}" class="btn">Go to Dashboard</a></div>
+    `;
+
+    return this.sendEmail({
+      to: email,
+      subject: `Verification Approved — Welcome ${fullName}!`,
+      html: this.wrap('Verification', 'Success', body, email),
+    });
+  }
+
+  async sendVerificationRejectedEmail(email: string, fullName: string, reason: string): Promise<{ id: string }> {
+    const body = `
+      <div style="text-align:center">
+        <span style="background:#FED7D7;color:#9B2C2C;padding:10px 22px;border-radius:50px;font-weight:600;font-size:13px">⚠ Verification Rejected</span>
+      </div>
+      <h2>Hello ${fullName},</h2>
+      <p>We reviewed your identity verification submission, but unfortunately, we could not approve it at this time.</p>
+      <div style="background:#FFF5F5;border-left:4px solid #F56565;padding:16px;margin:24px 0">
+        <strong style="color:#C53030">Reason for Rejection:</strong>
+        <p style="margin:8px 0 0 0;color:#742A2A">${reason}</p>
+      </div>
+      <p>You can re-submit your documents through your dashboard for review.</p>
+      <div style="text-align:center"><a href="${this.baseUrl()}/dashboard/verify" class="btn" style="background:#4A5568">Re-submit Documents</a></div>
+      <p style="font-size:13px;color:#718096;margin-top:24px">If you have questions, please contact our support team.</p>
+    `;
+
+    return this.sendEmail({
+      to: email,
+      subject: 'Update Regarding Your Identity Verification — Getkeja',
+      html: this.wrap('Verification', 'Update', body, email),
+    });
+  }
 }
 
 export const emailService = new EmailService();

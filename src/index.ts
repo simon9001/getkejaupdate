@@ -254,7 +254,7 @@ app.get('/metrics', async (c) => {
 app.route('/api/auth',                authRouter);
 app.route('/api/users',               usersRouter);
 app.route('/api/properties',          propertiesRouter);       // public + admin routes
-app.route('/api/landlord/properties', landlordRouter);          // landlord/agent/developer CRUD
+app.route('/api/landlord',            landlordRouter);          // landlord/agent/developer CRUD
 // app.route('/api/spatial',    spatialRouter);
 // app.route('/api/dashboard',  dashboardRouter);
 // app.route('/api/upload',     uploadRouter);
