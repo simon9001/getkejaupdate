@@ -1,4 +1,5 @@
 /**
+ * to future dev
  * admin.controller.ts
  *
  * Thin HTTP adapter — validates input, calls adminService, returns

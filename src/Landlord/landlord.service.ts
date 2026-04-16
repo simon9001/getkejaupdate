@@ -1028,11 +1028,10 @@ export class LandlordService {
       const { data: withRole } = await supabaseAdmin
         .from('user_roles')
         .select('user_id')
-        .in('user_id', userIds)
-        .eq('roles.name', roleName)
-        .innerJoin('roles', 'role_id', 'roles.id'); // pseudocode
+        .eq('is_active', true)
+        .in('user_id', userIds);
 
-      // Actually, since this is a complex join, I'll rely on the OR logic or a simplified version
+      // Return profiles filtered to those who have the requested role
       return profiles?.map(p => ({
         id: p.user_id,
         email: (p.user as any).email,
