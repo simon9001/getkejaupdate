@@ -139,6 +139,18 @@ subscriptionsRouter.post(
 );
 
 /**
+ * POST /api/subscriptions/paystack/verify
+ *
+ * Body: { plan_id, billing_cycle, paystack_reference }
+ * Verifies the Paystack transaction and activates the subscription.
+ */
+subscriptionsRouter.post(
+  '/paystack/verify',
+  authenticate,
+  (c) => subscriptionsController.verifyPaystack(c),
+);
+
+/**
  * POST /api/subscriptions/upgrade
  *
  * Same body as /subscribe.

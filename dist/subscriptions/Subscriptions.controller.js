@@ -104,6 +104,24 @@ export class SubscriptionsController {
         }
     }
     /**
+     * POST /api/subscriptions/paystack/verify
+     * Body: { plan_id, billing_cycle, paystack_reference }
+     *
+     * Verifies a Paystack transaction and activates the subscription.
+     * Called from the frontend Paystack inline popup success callback.
+     */
+    async verifyPaystack(c) {
+        try {
+            const user = c.get('user');
+            const input = await c.req.json();
+            const result = await subscriptionsService.subscribeWithPaystack(user.userId, input);
+            return c.json({ message: 'Subscription activated via Paystack', code: 'PAYSTACK_SUBSCRIBED', subscription: result }, 201);
+        }
+        catch (err) {
+            return fail(c, err, 'PAYSTACK_VERIFY_FAILED');
+        }
+    }
+    /**
      * POST /api/subscriptions/upgrade
      * Body: { plan_id, billing_cycle, payment_method, mpesa_phone? }
      *

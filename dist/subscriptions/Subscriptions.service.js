@@ -182,6 +182,68 @@ export class SubscriptionsService {
         return data;
     }
     // ─────────────────────────────────────────────────────────────────────────
+    // PAYSTACK — verify payment and activate subscription
+    // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Verify a Paystack payment reference, then activate the subscription.
+     * Replaces the simulated payment flow for paid plans.
+     */
+    async subscribeWithPaystack(userId, input) {
+        const { plan_id, billing_cycle, paystack_reference } = input;
+        const secretKey = process.env.PAYSTACK_SECRET_KEY;
+        if (!secretKey)
+            throw new Error('Paystack is not configured on this server');
+        // ── 1. Verify with Paystack ───────────────────────────────────────────
+        const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(paystack_reference)}`, { headers: { Authorization: `Bearer ${secretKey}` } });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.status || verifyData.data?.status !== 'success') {
+            throw new Error('Payment verification failed — transaction was not successful');
+        }
+        // ── 2. Check amount ───────────────────────────────────────────────────
+        const plan = await this.getPlanById(plan_id);
+        const expectedKes = billing_cycle === 'annual'
+            ? (plan.price_annual_kes ?? plan.price_monthly_kes * 12)
+            : plan.price_monthly_kes;
+        // Paystack stores amounts in the lowest currency unit (kobo for KES)
+        const paidKes = Math.floor(verifyData.data.amount / 100);
+        if (paidKes < expectedKes) {
+            throw new Error(`Underpayment: expected KES ${expectedKes}, received KES ${paidKes}`);
+        }
+        // ── 3. Cancel any existing active subscription ────────────────────────
+        const existing = await this.getMySubscription(userId);
+        if (existing) {
+            await supabaseAdmin
+                .from('user_subscriptions')
+                .update({ status: 'cancelled', cancelled_at: new Date().toISOString().split('T')[0] })
+                .eq('id', existing.id);
+        }
+        // ── 4. Create subscription row ────────────────────────────────────────
+        const startedAt = new Date();
+        const renewsAt = this._computeRenewalDate(startedAt, billing_cycle);
+        const { data, error } = await supabaseAdmin
+            .from('user_subscriptions')
+            .insert({
+            user_id: userId,
+            plan_id,
+            billing_cycle,
+            amount_kes: expectedKes,
+            status: 'active',
+            started_at: startedAt.toISOString().split('T')[0],
+            renews_at: renewsAt.toISOString().split('T')[0],
+            unlock_credits_used: 0,
+            ai_queries_used_today: 0,
+        })
+            .select(`
+        id, billing_cycle, amount_kes, status, started_at, renews_at,
+        subscription_plans ( id, name, viewing_unlocks_per_month )
+      `)
+            .single();
+        if (error)
+            throw new Error(`Failed to create subscription: ${error.message}`);
+        logger.info({ userId, planId: plan_id, billing_cycle, reference: paystack_reference }, 'subscription.paystack.created');
+        return data;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
     // UPGRADE / DOWNGRADE
     // ─────────────────────────────────────────────────────────────────────────
     /**
