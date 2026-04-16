@@ -258,9 +258,10 @@ export class AdminController {
    */
   async getPendingVerifications(c: Context) {
     try {
-      const page  = Number(c.req.query('page'))  || 1;
-      const limit = Math.min(100, Number(c.req.query('limit')) || 20);
-      const data  = await adminService.getPendingVerifications(page, limit);
+      const page   = Number(c.req.query('page'))  || 1;
+      const limit  = Math.min(100, Number(c.req.query('limit')) || 20);
+      const status = c.req.query('status') || 'pending';
+      const data   = await adminService.getPendingVerifications(page, limit, status);
       return c.json({ ...data, code: 'VERIFICATIONS_FETCHED' });
     } catch (err) { return fail(c, err, 'VERIFICATIONS_FAILED'); }
   }

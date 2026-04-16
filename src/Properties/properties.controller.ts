@@ -141,8 +141,11 @@ export class PropertiesController {
     try {
       const user   = c.get('user');
       const status = c.req.query('status');
-      const result = await propertiesService.getMyProperties(user.userId, { status });
-      return c.json({ properties: result, total: result.length, code: 'MY_PROPERTIES_FETCHED' });
+      const page   = Math.max(1, Number(c.req.query('page'))  || 1);
+      const limit  = Math.min(50, Number(c.req.query('limit')) || 20);
+      const search = c.req.query('search')?.trim() || undefined;
+      const result = await propertiesService.getMyProperties(user.userId, { status, page, limit, search });
+      return c.json({ ...result, code: 'MY_PROPERTIES_FETCHED' });
     } catch (err) {
       return fail(c, err, 'MY_PROPERTIES_FETCH_FAILED');
     }

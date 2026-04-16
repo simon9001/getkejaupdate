@@ -172,7 +172,6 @@ usersRouter.put(
 );
 
 const submitVerificationSchema = z.object({
-  requested_role:  z.enum(['landlord', 'developer']),
   doc_type:        z.enum(['national_id', 'passport', 'company_cert', 'earb_license', 'nca_cert']),
   doc_number:      z.string().max(60).optional(),
   front_image:     z.string().optional(),   // base64 dataUrl or URL
@@ -183,6 +182,10 @@ const submitVerificationSchema = z.object({
   nca_reg_number:  z.string().max(60).optional(),
 });
 
+// GET — check own verification status
+usersRouter.get('/me/verification', (c) => usersController.getMyVerification(c));
+
+// POST — submit a new verification request
 usersRouter.post(
   '/me/verification',
   zValidator('json', submitVerificationSchema),

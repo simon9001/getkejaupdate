@@ -1,5 +1,12 @@
-import { cloudinaryService } from '../services/cloudinary.service.js';
+import { v2 as cloudinary } from 'cloudinary';
+import { env } from '../config/environment.js';
 import { logger } from '../utils/logger.js';
+// Configure Cloudinary from env
+cloudinary.config({
+    cloud_name: env.cloudinary.cloudName,
+    api_key: env.cloudinary.apiKey,
+    api_secret: env.cloudinary.apiSecret,
+});
 export class UploadController {
     /**
      * Upload one or more property images
@@ -41,8 +48,10 @@ export class UploadController {
                 }
                 const arrayBuffer = await file.arrayBuffer();
                 const buffer = Buffer.from(arrayBuffer);
-                const uploaded = await cloudinaryService.uploadImage(buffer, {
+                const base64 = `data:${file.type};base64,${buffer.toString('base64')}`;
+                const uploaded = await cloudinary.uploader.upload(base64, {
                     folder: `getkeja/properties/${user.userId}`,
+                    resource_type: 'image',
                 });
                 results.push({ url: uploaded.secure_url, public_id: uploaded.public_id });
             }

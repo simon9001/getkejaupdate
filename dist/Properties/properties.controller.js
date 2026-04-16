@@ -1,838 +1,360 @@
+/**
+ * properties.controller.ts
+ *
+ * Thin HTTP adapter layer — validates input, calls the service, returns
+ * consistent JSON responses.  All business logic lives in the service.
+ *
+ * Error handling contract:
+ *   - Service throws Error with a descriptive message
+ *   - Controller maps well-known message fragments to HTTP status codes
+ *   - Fallback is always 500 with a sanitised message
+ */
 import { propertiesService } from './properties.service.js';
 import { logger } from '../utils/logger.js';
-import { parseNaturalLanguageQuery } from '../utils/nlp.utils.js';
+// Helper: map a thrown error to an appropriate HTTP status code
+function resolveStatus(err) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes('not found'))
+        return 404;
+    if (msg.includes('forbidden') || msg.includes('do not own'))
+        return 403;
+    if (msg.includes('already exists'))
+        return 409;
+    if (msg.includes('required') || msg.includes('invalid') || msg.includes('missing'))
+        return 400;
+    return 500;
+}
+function fail(c, err, context) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    const status = resolveStatus(error);
+    logger.error({ requestId: c.get('requestId'), context, message: error.message }, 'properties.controller.error');
+    return c.json({ message: error.message || 'Request failed', code: context.toUpperCase() }, status);
+}
 export class PropertiesController {
-    /**
-     * Create a new property with category classification
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // POST /api/properties
+    // ─────────────────────────────────────────────────────────────────────────
     async createProperty(c) {
         try {
             const user = c.get('user');
             const input = await c.req.json();
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            // Validate required fields
-            if (!input.title || !input.property_type || !input.latitude || !input.longitude) {
-                return c.json({
-                    message: 'Missing required fields: title, property_type, latitude, longitude',
-                    code: 'MISSING_FIELDS'
-                }, 400);
-            }
-            // Auto-categorize property based on type
-            const category = this.categorizeProperty(input.property_type);
             const property = await propertiesService.createProperty(user.userId, input);
-            return c.json({
-                message: 'Property created successfully',
-                code: 'PROPERTY_CREATED',
-                property: {
-                    ...property,
-                    category
-                }
-            }, 201);
+            return c.json({ message: 'Property created successfully', code: 'PROPERTY_CREATED', property }, 201);
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Create property error');
-            const status = error.message.includes('Unauthorized') ? 403 : 400;
-            return c.json({
-                message: error.message || 'Failed to create property',
-                code: 'CREATION_FAILED'
-            }, status);
+        catch (err) {
+            return fail(c, err, 'PROPERTY_CREATE_FAILED');
         }
     }
-    /**
-     * Categorize property based on type
-     */
-    categorizeProperty(propertyType) {
-        const commercialTypes = ['office', 'retail', 'warehouse', 'industrial'];
-        const residentialTypes = ['bedsitter', 'studio', 'apartment', 'maisonette', 'bungalow', 'villa'];
-        const recreationalTypes = ['short_term', 'vacation', 'resort', 'camp'];
-        if (commercialTypes.includes(propertyType)) {
-            return 'commercial';
-        }
-        else if (recreationalTypes.includes(propertyType)) {
-            return 'recreational';
-        }
-        else {
-            return 'residential';
-        }
-    }
-    /**
-     * Get property by ID
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/properties/:id
+    // ─────────────────────────────────────────────────────────────────────────
     async getProperty(c) {
         try {
             const id = c.req.param('id');
-            if (!id) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
             const property = await propertiesService.getPropertyById(id);
-            // Add category to response
-            const category = this.categorizeProperty(property.property_type);
-            return c.json({
-                property: {
-                    ...property,
-                    category
-                },
-                code: 'PROPERTY_FETCHED'
-            });
+            return c.json({ property, code: 'PROPERTY_FETCHED' });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Get property error');
-            const status = error.message.includes('not found') ? 404 : 500;
-            return c.json({
-                message: error.message || 'Property not found',
-                code: 'FETCH_FAILED'
-            }, status);
+        catch (err) {
+            return fail(c, err, 'PROPERTY_FETCH_FAILED');
         }
     }
-    /**
-     * List all properties with filters
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/properties
+    // ─────────────────────────────────────────────────────────────────────────
     async listProperties(c) {
         try {
-            const status = c.req.query('status');
-            const type = c.req.query('type');
-            const category = c.req.query('category');
-            const minPrice = c.req.query('minPrice') ? Number(c.req.query('minPrice')) : undefined;
-            const maxPrice = c.req.query('maxPrice') ? Number(c.req.query('maxPrice')) : undefined;
-            const town = c.req.query('town');
-            const county = c.req.query('county');
-            const bedrooms = c.req.query('bedrooms') ? Number(c.req.query('bedrooms')) : undefined;
-            const bathrooms = c.req.query('bathrooms') ? Number(c.req.query('bathrooms')) : undefined;
-            const lat = c.req.query('lat') ? Number(c.req.query('lat')) : undefined;
-            const lng = c.req.query('lng') ? Number(c.req.query('lng')) : undefined;
-            const radius = c.req.query('radius') ? Number(c.req.query('radius')) : undefined;
-            const amenities = c.req.query('amenities')?.split(',');
-            const limit = c.req.query('limit') ? Number(c.req.query('limit')) : 20;
-            const page = c.req.query('page') ? Number(c.req.query('page')) : 1;
-            const is_verified = c.req.query('is_verified') === 'true' ? true :
-                c.req.query('is_verified') === 'false' ? false : undefined;
-            const offset = (page - 1) * limit;
-            // If category is specified, get property types for that category
-            let propertyTypes;
-            if (category) {
-                propertyTypes = propertiesService.getPropertyTypesByCategory(category);
-            }
+            const q = c.req.query();
             const result = await propertiesService.listProperties({
-                status,
-                type,
-                propertyTypes,
-                minPrice,
-                maxPrice,
-                town,
-                county,
-                bedrooms,
-                bathrooms,
-                lat,
-                lng,
-                radius,
-                amenities,
-                limit,
-                offset,
-                is_verified
+                page: Number(q.page) || 1,
+                limit: Math.min(100, Number(q.limit) || 20),
+                listing_category: q.listing_category,
+                listing_type: q.listing_type,
+                status: q.status,
+                county: q.county,
+                area: q.area,
+                min_price: q.min_price ? Number(q.min_price) : undefined,
+                max_price: q.max_price ? Number(q.max_price) : undefined,
+                bedrooms: q.bedrooms ? Number(q.bedrooms) : undefined,
+                is_furnished: q.is_furnished,
+                is_featured: q.is_featured ? q.is_featured === 'true' : undefined,
+                construction_status: q.construction_status,
+                lat: q.lat ? Number(q.lat) : undefined,
+                lng: q.lng ? Number(q.lng) : undefined,
+                radius: q.radius ? Number(q.radius) : 5,
             });
-            // Add category to each property
-            const propertiesWithCategory = result.properties.map(property => ({
-                ...property,
-                category: this.categorizeProperty(property.property_type)
-            }));
-            return c.json({
-                properties: propertiesWithCategory,
-                total: result.total,
-                page,
-                limit,
-                category: category ? {
-                    name: category,
-                    info: propertiesService.getCategoryInfo(category)
-                } : undefined,
-                code: 'PROPERTIES_LISTED'
-            });
+            return c.json({ ...result, code: 'PROPERTIES_LISTED' });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'List properties error');
-            return c.json({
-                message: error.message || 'Failed to list properties',
-                code: 'LIST_FAILED'
-            }, 500);
+        catch (err) {
+            return fail(c, err, 'PROPERTIES_LIST_FAILED');
         }
     }
-    /**
-     * Natural language search for properties
-     * Handles queries like "i want a house around embu university ranging 2500"
-     */
-    async naturalLanguageSearch(c) {
-        try {
-            const query = c.req.query('q');
-            if (!query) {
-                return c.json({
-                    message: 'Search query is required',
-                    code: 'QUERY_REQUIRED'
-                }, 400);
-            }
-            // Parse the natural language query
-            const parsedQuery = await parseNaturalLanguageQuery(query);
-            logger.info({ parsedQuery }, 'Parsed natural language query');
-            // Build search filters based on parsed query
-            const filters = {
-                status: 'active',
-                is_verified: true,
-                limit: c.req.query('limit') ? Number(c.req.query('limit')) : 20,
-                offset: c.req.query('page') ? (Number(c.req.query('page')) - 1) * 20 : 0
-            };
-            // Apply price filter
-            if (parsedQuery.maxPrice) {
-                filters.maxPrice = parsedQuery.maxPrice;
-            }
-            if (parsedQuery.minPrice) {
-                filters.minPrice = parsedQuery.minPrice;
-            }
-            // Apply bedroom filter
-            if (parsedQuery.bedrooms !== undefined) {
-                filters.bedrooms = parsedQuery.bedrooms;
-            }
-            // Apply property type filter
-            if (parsedQuery.propertyType) {
-                filters.type = parsedQuery.propertyType;
-            }
-            // Apply category filter
-            if (parsedQuery.category) {
-                filters.propertyTypes = propertiesService.getPropertyTypesByCategory(parsedQuery.category);
-            }
-            // If location is a landmark name, search near that landmark
-            if (parsedQuery.landmark) {
-                // Use the landmark-based search
-                const properties = await propertiesService.getPropertiesNearLandmark(parsedQuery.landmark, parsedQuery.radius || 2000, parsedQuery.category);
-                // Apply price and bedroom filters to results
-                let filteredProperties = properties;
-                if (parsedQuery.minPrice !== undefined) {
-                    filteredProperties = filteredProperties.filter((p) => (p.price_per_month || 0) >= parsedQuery.minPrice);
-                }
-                if (parsedQuery.maxPrice !== undefined) {
-                    filteredProperties = filteredProperties.filter((p) => (p.price_per_month || 0) <= parsedQuery.maxPrice);
-                }
-                if (parsedQuery.bedrooms !== undefined) {
-                    filteredProperties = filteredProperties.filter((p) => p.bedrooms === parsedQuery.bedrooms);
-                }
-                // Add category to properties
-                const propertiesWithCategory = filteredProperties.map((property) => ({
-                    ...property,
-                    category: this.categorizeProperty(property.property_type)
-                }));
-                return c.json({
-                    message: 'Search completed',
-                    code: 'SEARCH_COMPLETED',
-                    query: parsedQuery,
-                    results: propertiesWithCategory,
-                    total: propertiesWithCategory.length,
-                    page: 1
-                });
-            }
-            // If town is specified
-            if (parsedQuery.town) {
-                filters.town = parsedQuery.town;
-            }
-            // Execute search
-            const results = await propertiesService.searchProperties(filters);
-            // Handle both array and object responses
-            const propertiesArray = Array.isArray(results) ? results : results.properties || [];
-            const totalCount = Array.isArray(results) ? results.length : results.total || propertiesArray.length;
-            // Add category to results
-            const propertiesWithCategory = propertiesArray.map((property) => ({
-                ...property,
-                category: this.categorizeProperty(property.property_type)
-            }));
-            return c.json({
-                message: 'Search completed',
-                code: 'SEARCH_COMPLETED',
-                query: parsedQuery,
-                results: propertiesWithCategory,
-                total: totalCount,
-                page: c.req.query('page') ? Number(c.req.query('page')) : 1
-            });
-        }
-        catch (error) {
-            logger.error({ error: error.message, query: c.req.query('q') }, 'Natural language search error');
-            return c.json({
-                message: error.message || 'Failed to process search query',
-                code: 'SEARCH_FAILED'
-            }, 500);
-        }
-    }
-    /**
-     * Search by category (commercial, residential, recreational)
-     */
-    async searchByCategory(c) {
-        try {
-            const category = c.req.param('category');
-            if (!['commercial', 'residential', 'recreational'].includes(category)) {
-                return c.json({
-                    message: 'Invalid category. Must be commercial, residential, or recreational',
-                    code: 'INVALID_CATEGORY'
-                }, 400);
-            }
-            const minPrice = c.req.query('minPrice') ? Number(c.req.query('minPrice')) : undefined;
-            const maxPrice = c.req.query('maxPrice') ? Number(c.req.query('maxPrice')) : undefined;
-            const town = c.req.query('town');
-            const lat = c.req.query('lat') ? Number(c.req.query('lat')) : undefined;
-            const lng = c.req.query('lng') ? Number(c.req.query('lng')) : undefined;
-            const radius = c.req.query('radius') ? Number(c.req.query('radius')) : undefined;
-            const bedrooms = c.req.query('bedrooms') ? Number(c.req.query('bedrooms')) : undefined;
-            const limit = c.req.query('limit') ? Number(c.req.query('limit')) : 20;
-            const page = c.req.query('page') ? Number(c.req.query('page')) : 1;
-            const offset = (page - 1) * limit;
-            // Map category to property types
-            const propertyTypes = propertiesService.getPropertyTypesByCategory(category);
-            const filters = {
-                propertyTypes,
-                minPrice,
-                maxPrice,
-                town,
-                bedrooms,
-                lat,
-                lng,
-                radius,
-                limit,
-                offset,
-                status: 'active',
-                is_verified: true
-            };
-            const results = await propertiesService.listProperties(filters);
-            // Add category metadata
-            const propertiesWithCategory = results.properties.map(property => ({
-                ...property,
-                category
-            }));
-            return c.json({
-                properties: propertiesWithCategory,
-                total: results.total,
-                page,
-                limit,
-                category: {
-                    name: category,
-                    info: propertiesService.getCategoryInfo(category)
-                },
-                code: 'CATEGORY_SEARCH_COMPLETE'
-            });
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Category search error');
-            return c.json({
-                message: error.message || 'Failed to search by category',
-                code: 'CATEGORY_SEARCH_FAILED'
-            }, 500);
-        }
-    }
-    /**
-     * Get properties near a specific landmark
-     */
-    async getPropertiesNearLandmark(c) {
-        try {
-            const landmarkName = c.req.param('landmark');
-            const radius = c.req.query('radius') ? Number(c.req.query('radius')) : 2000;
-            const category = c.req.query('category');
-            const minPrice = c.req.query('minPrice') ? Number(c.req.query('minPrice')) : undefined;
-            const maxPrice = c.req.query('maxPrice') ? Number(c.req.query('maxPrice')) : undefined;
-            const bedrooms = c.req.query('bedrooms') ? Number(c.req.query('bedrooms')) : undefined;
-            if (!landmarkName) {
-                return c.json({
-                    message: 'Landmark name is required',
-                    code: 'LANDMARK_REQUIRED'
-                }, 400);
-            }
-            let properties = await propertiesService.getPropertiesNearLandmark(landmarkName, radius, category);
-            // Apply additional filters
-            if (minPrice !== undefined) {
-                properties = properties.filter((p) => (p.price_per_month || 0) >= minPrice);
-            }
-            if (maxPrice !== undefined) {
-                properties = properties.filter((p) => (p.price_per_month || 0) <= maxPrice);
-            }
-            if (bedrooms !== undefined) {
-                properties = properties.filter((p) => p.bedrooms === bedrooms);
-            }
-            // Add category to properties
-            const propertiesWithCategory = properties.map((property) => ({
-                ...property,
-                category: this.categorizeProperty(property.property_type)
-            }));
-            return c.json({
-                message: `Properties near ${landmarkName}`,
-                code: 'NEAR_LANDMARK_FETCHED',
-                landmark: landmarkName,
-                radius,
-                properties: propertiesWithCategory,
-                total: properties.length
-            });
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Get properties near landmark error');
-            return c.json({
-                message: error.message || 'Failed to fetch properties near landmark',
-                code: 'NEAR_LANDMARK_FAILED'
-            }, 500);
-        }
-    }
-    /**
-     * Get property statistics by category
-     */
-    async getCategoryStatistics(c) {
-        try {
-            const stats = await propertiesService.getCategoryStatistics();
-            return c.json({
-                message: 'Category statistics retrieved',
-                code: 'CATEGORY_STATS_FETCHED',
-                statistics: stats
-            });
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Get category statistics error');
-            return c.json({
-                message: error.message || 'Failed to fetch category statistics',
-                code: 'STATS_FAILED'
-            }, 500);
-        }
-    }
-    /**
-     * Update property
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // PATCH /api/properties/:id
+    // ─────────────────────────────────────────────────────────────────────────
     async updateProperty(c) {
         try {
             const user = c.get('user');
             const id = c.req.param('id');
-            const updates = await c.req.json();
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            if (!id) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            const property = await propertiesService.updateProperty(id, user.userId, updates);
-            // Add category to response
-            const category = this.categorizeProperty(property.property_type);
-            return c.json({
-                message: 'Property updated successfully',
-                code: 'PROPERTY_UPDATED',
-                property: {
-                    ...property,
-                    category
-                }
-            });
+            const input = await c.req.json();
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            const property = await propertiesService.updateProperty(id, user.userId, input, isAdmin);
+            return c.json({ message: 'Property updated', code: 'PROPERTY_UPDATED', property });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Update property error');
-            let status = 400;
-            if (error.message.includes('not found'))
-                status = 404;
-            if (error.message.includes('Unauthorized'))
-                status = 403;
-            return c.json({
-                message: error.message || 'Failed to update property',
-                code: 'UPDATE_FAILED'
-            }, status);
+        catch (err) {
+            return fail(c, err, 'PROPERTY_UPDATE_FAILED');
         }
     }
-    /**
-     * Delete property
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // DELETE /api/properties/:id
+    // ─────────────────────────────────────────────────────────────────────────
     async deleteProperty(c) {
         try {
             const user = c.get('user');
             const id = c.req.param('id');
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            if (!id) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            const result = await propertiesService.deleteProperty(id, user.userId);
-            return c.json(result);
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            await propertiesService.deleteProperty(id, user.userId, isAdmin);
+            return c.json({ message: 'Property deleted', code: 'PROPERTY_DELETED' });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Delete property error');
-            let status = 400;
-            if (error.message.includes('not found'))
-                status = 404;
-            if (error.message.includes('Unauthorized'))
-                status = 403;
-            return c.json({
-                message: error.message || 'Failed to delete property',
-                code: 'DELETE_FAILED'
-            }, status);
+        catch (err) {
+            return fail(c, err, 'PROPERTY_DELETE_FAILED');
         }
     }
-    /**
-     * Add images to property
-     */
-    async addPropertyImages(c) {
-        try {
-            const user = c.get('user');
-            const propertyId = c.req.param('id');
-            const { images } = await c.req.json();
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            if (!propertyId) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            if (!images || !Array.isArray(images) || images.length === 0) {
-                return c.json({
-                    message: 'Images array is required',
-                    code: 'IMAGES_REQUIRED'
-                }, 400);
-            }
-            const uploadedImages = await propertiesService.addPropertyImages(propertyId, user.userId, images);
-            return c.json({
-                message: 'Images added successfully',
-                code: 'IMAGES_ADDED',
-                images: uploadedImages
-            }, 201);
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Add property images error');
-            let status = 400;
-            if (error.message.includes('not found'))
-                status = 404;
-            if (error.message.includes('Unauthorized'))
-                status = 403;
-            return c.json({
-                message: error.message || 'Failed to add images',
-                code: 'IMAGE_ADD_FAILED'
-            }, status);
-        }
-    }
-    /**
-     * Delete property image
-     */
-    async deletePropertyImage(c) {
-        try {
-            const user = c.get('user');
-            const imageId = c.req.param('imageId');
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            if (!imageId) {
-                return c.json({
-                    message: 'Image ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            const result = await propertiesService.deletePropertyImage(imageId, user.userId);
-            return c.json(result);
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Delete property image error');
-            let status = 400;
-            if (error.message.includes('not found'))
-                status = 404;
-            if (error.message.includes('Unauthorized'))
-                status = 403;
-            return c.json({
-                message: error.message || 'Failed to delete image',
-                code: 'IMAGE_DELETE_FAILED'
-            }, status);
-        }
-    }
-    /**
-     * Get properties by current user
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/properties/me
+    // ─────────────────────────────────────────────────────────────────────────
     async getMyProperties(c) {
         try {
             const user = c.get('user');
             const status = c.req.query('status');
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            const properties = await propertiesService.getPropertiesByOwner(user.userId, status ? { status } : undefined);
-            // Add category to each property
-            const propertiesWithCategory = properties.map((property) => ({
-                ...property,
-                category: this.categorizeProperty(property.property_type)
-            }));
-            return c.json({
-                properties: propertiesWithCategory,
-                total: properties.length,
-                code: 'MY_PROPERTIES_FETCHED'
-            });
+            const page = Math.max(1, Number(c.req.query('page')) || 1);
+            const limit = Math.min(50, Number(c.req.query('limit')) || 20);
+            const search = c.req.query('search')?.trim() || undefined;
+            const result = await propertiesService.getMyProperties(user.userId, { status, page, limit, search });
+            return c.json({ ...result, code: 'MY_PROPERTIES_FETCHED' });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Get my properties error');
-            return c.json({
-                message: error.message || 'Failed to fetch your properties',
-                code: 'FETCH_FAILED'
-            }, 500);
+        catch (err) {
+            return fail(c, err, 'MY_PROPERTIES_FETCH_FAILED');
         }
     }
-    /**
-     * Search properties by location (legacy)
-     */
-    async searchByLocation(c) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // PATCH /api/properties/:id/status  (admin)
+    // ─────────────────────────────────────────────────────────────────────────
+    async setStatus(c) {
         try {
-            const lat = c.req.query('lat') ? Number(c.req.query('lat')) : undefined;
-            const lng = c.req.query('lng') ? Number(c.req.query('lng')) : undefined;
-            const radius = c.req.query('radius') ? Number(c.req.query('radius')) : 5000;
-            if (!lat || !lng) {
-                return c.json({
-                    message: 'Latitude and longitude are required',
-                    code: 'COORDINATES_REQUIRED'
-                }, 400);
-            }
-            const results = await propertiesService.searchByLocation(lat, lng, radius);
-            return c.json({
-                results,
-                total: results.length,
-                code: 'LOCATION_SEARCH_COMPLETE'
-            });
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Location search error');
-            return c.json({
-                message: error.message || 'Failed to search by location',
-                code: 'SEARCH_FAILED'
-            }, 500);
-        }
-    }
-    /**
-     * Get unverified properties (admin/verifier)
-     */
-    async getUnverifiedProperties(c) {
-        try {
-            const user = c.get('user');
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            const properties = await propertiesService.getUnverifiedProperties();
-            // Add category to each property
-            const propertiesWithCategory = properties.map((property) => ({
-                ...property,
-                category: this.categorizeProperty(property.property_type)
-            }));
-            return c.json({
-                properties: propertiesWithCategory,
-                total: properties.length,
-                code: 'UNVERIFIED_PROPERTIES_FETCHED'
-            });
-        }
-        catch (error) {
-            logger.error({ error: error.message }, 'Get unverified error');
-            return c.json({
-                message: error.message || 'Failed to fetch unverified properties',
-                code: 'FETCH_FAILED'
-            }, 500);
-        }
-    }
-    /**
-     * Verify property (admin/verifier)
-     */
-    async verifyProperty(c) {
-        try {
-            const user = c.get('user');
             const id = c.req.param('id');
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
+            const { status } = await c.req.json();
+            if (!status) {
+                return c.json({ message: 'status is required', code: 'MISSING_STATUS' }, 400);
             }
-            if (!id) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            const property = await propertiesService.verifyProperty(id, user.userId);
-            // Add category to response
-            const category = this.categorizeProperty(property.property_type);
-            return c.json({
-                message: 'Property verified successfully',
-                property: {
-                    ...property,
-                    category
-                },
-                code: 'PROPERTY_VERIFIED'
-            });
+            const property = await propertiesService.setPropertyStatus(id, status);
+            return c.json({ message: 'Status updated', code: 'STATUS_UPDATED', property });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Verify property error');
-            return c.json({
-                message: error.message || 'Failed to verify property',
-                code: 'VERIFY_FAILED'
-            }, 400);
+        catch (err) {
+            return fail(c, err, 'STATUS_UPDATE_FAILED');
         }
     }
-    /**
-     * Reject property (admin/verifier)
-     */
-    async rejectProperty(c) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // PATCH /api/properties/:id/featured  (admin)
+    // ─────────────────────────────────────────────────────────────────────────
+    async setFeatured(c) {
         try {
-            const user = c.get('user');
             const id = c.req.param('id');
-            const body = await c.req.json().catch(() => ({}));
-            const reason = body?.reason;
-            if (!user) {
-                return c.json({ message: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+            const { featured } = await c.req.json();
+            if (typeof featured !== 'boolean') {
+                return c.json({ message: 'featured must be a boolean', code: 'INVALID_FIELD' }, 400);
             }
-            if (!id) {
-                return c.json({ message: 'Property ID is required', code: 'ID_REQUIRED' }, 400);
-            }
-            const property = await propertiesService.rejectProperty(id, user.userId, reason);
+            const property = await propertiesService.setFeatured(id, featured);
             return c.json({
-                message: 'Property rejected',
+                message: featured ? 'Property marked as featured' : 'Featured status removed',
+                code: 'FEATURED_UPDATED',
                 property,
-                code: 'PROPERTY_REJECTED'
             });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Reject property error');
-            return c.json({
-                message: error.message || 'Failed to reject property',
-                code: 'REJECT_FAILED'
-            }, 400);
+        catch (err) {
+            return fail(c, err, 'FEATURED_UPDATE_FAILED');
         }
     }
-    /**
-     * Boost property (admin)
-     */
-    async boostProperty(c) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/properties/admin/all  (admin)
+    // ─────────────────────────────────────────────────────────────────────────
+    async getAllPropertiesAdmin(c) {
+        try {
+            const page = Number(c.req.query('page')) || 1;
+            const limit = Math.min(100, Number(c.req.query('limit')) || 20);
+            const result = await propertiesService.getAllPropertiesAdmin(page, limit);
+            return c.json({ ...result, code: 'ALL_PROPERTIES_FETCHED' });
+        }
+        catch (err) {
+            return fail(c, err, 'ALL_PROPERTIES_FETCH_FAILED');
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // POST /api/properties/:id/nearby-places
+    // ─────────────────────────────────────────────────────────────────────────
+    async addNearbyPlaces(c) {
         try {
             const user = c.get('user');
             const id = c.req.param('id');
-            const { isBoosted } = await c.req.json();
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
+            const body = await c.req.json();
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            if (!Array.isArray(body.places) || body.places.length === 0) {
+                return c.json({ message: 'places array is required', code: 'MISSING_PLACES' }, 400);
             }
-            if (!id) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            const property = await propertiesService.boostProperty(id, isBoosted);
-            // Add category to response
-            const category = this.categorizeProperty(property.property_type);
-            return c.json({
-                message: isBoosted ? 'Property boosted successfully' : 'Boost removed successfully',
-                property: {
-                    ...property,
-                    category
-                },
-                code: 'PROPERTY_BOOSTED'
-            });
+            const places = await propertiesService.addNearbyPlaces(id, user.userId, body.places, isAdmin);
+            return c.json({ message: `${places.length} nearby place(s) added with distances calculated`, code: 'NEARBY_PLACES_ADDED', places }, 201);
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Boost property error');
-            return c.json({
-                message: error.message || 'Failed to boost property',
-                code: 'BOOST_FAILED'
-            }, 400);
+        catch (err) {
+            return fail(c, err, 'NEARBY_PLACES_ADD_FAILED');
         }
     }
-    /**
-     * Strike property (admin)
-     */
-    async strikeProperty(c) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // DELETE /api/properties/:id/nearby-places/:placeId
+    // ─────────────────────────────────────────────────────────────────────────
+    async deleteNearbyPlace(c) {
         try {
             const user = c.get('user');
             const id = c.req.param('id');
-            const { isStruck } = await c.req.json();
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
-            }
-            if (!id) {
-                return c.json({
-                    message: 'Property ID is required',
-                    code: 'ID_REQUIRED'
-                }, 400);
-            }
-            const property = await propertiesService.strikeProperty(id, isStruck);
-            // Add category to response
-            const category = this.categorizeProperty(property.property_type);
-            return c.json({
-                message: isStruck ? 'Property struck successfully' : 'Strike removed successfully',
-                property: {
-                    ...property,
-                    category
-                },
-                code: 'PROPERTY_STRUCK'
-            });
+            const placeId = c.req.param('placeId');
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            await propertiesService.deleteNearbyPlace(placeId, id, user.userId, isAdmin);
+            return c.json({ message: 'Nearby place removed', code: 'NEARBY_PLACE_DELETED' });
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Strike property error');
-            return c.json({
-                message: error.message || 'Failed to strike property',
-                code: 'STRIKE_FAILED'
-            }, 400);
+        catch (err) {
+            return fail(c, err, 'NEARBY_PLACE_DELETE_FAILED');
         }
     }
-    /**
-     * Get all properties (admin)
-     */
-    async getAllProperties(c) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // POST /api/properties/:id/media
+    // ─────────────────────────────────────────────────────────────────────────
+    async uploadMedia(c) {
         try {
             const user = c.get('user');
-            if (!user) {
-                return c.json({
-                    message: 'Unauthorized',
-                    code: 'UNAUTHORIZED'
-                }, 401);
+            const id = c.req.param('id');
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            const body = await c.req.json();
+            if (!Array.isArray(body.media) || body.media.length === 0) {
+                return c.json({ message: 'media array is required', code: 'MISSING_MEDIA' }, 400);
             }
-            const properties = await propertiesService.getAllProperties();
-            // Add category to each property
-            const propertiesWithCategory = properties.map((property) => ({
-                ...property,
-                category: this.categorizeProperty(property.property_type)
-            }));
+            if (body.media.length > 20) {
+                return c.json({ message: 'Maximum 20 files per request', code: 'TOO_MANY_FILES' }, 400);
+            }
+            for (const [i, item] of body.media.entries()) {
+                if (!item.media_type) {
+                    return c.json({ message: `media[${i}].media_type is required`, code: 'INVALID_MEDIA' }, 400);
+                }
+                if (!item.file || typeof item.file !== 'string') {
+                    return c.json({ message: `media[${i}].file must be a base64 data URI or https URL`, code: 'INVALID_MEDIA' }, 400);
+                }
+            }
+            const saved = await propertiesService.uploadMediaForProperty(id, user.userId, body.media, isAdmin);
             return c.json({
-                properties: propertiesWithCategory,
-                total: properties.length,
-                code: 'ALL_PROPERTIES_FETCHED'
-            });
+                message: `${saved?.length ?? 0} file(s) uploaded successfully`,
+                code: 'MEDIA_UPLOADED',
+                media: saved,
+            }, 201);
         }
-        catch (error) {
-            logger.error({ error: error.message }, 'Get all properties error');
-            return c.json({
-                message: error.message || 'Failed to fetch all properties',
-                code: 'FETCH_FAILED'
-            }, 500);
+        catch (err) {
+            return fail(c, err, 'MEDIA_UPLOAD_FAILED');
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // DELETE /api/properties/:id/media/:mediaId
+    // ─────────────────────────────────────────────────────────────────────────
+    async deleteMedia(c) {
+        try {
+            const user = c.get('user');
+            const id = c.req.param('id');
+            const mediaId = c.req.param('mediaId');
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            await propertiesService.deleteMediaItem(mediaId, id, user.userId, isAdmin);
+            return c.json({ message: 'Media deleted', code: 'MEDIA_DELETED' });
+        }
+        catch (err) {
+            return fail(c, err, 'MEDIA_DELETE_FAILED');
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHORT-TERM AVAILABILITY ENDPOINTS
+    // ─────────────────────────────────────────────────────────────────────────
+    async addAvailabilityBlocks(c) {
+        try {
+            const user = c.get('user');
+            const id = c.req.param('id');
+            const body = await c.req.json();
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            if (!Array.isArray(body.blocks) || body.blocks.length === 0) {
+                return c.json({ message: 'blocks array is required', code: 'MISSING_BLOCKS' }, 400);
+            }
+            const blocks = await propertiesService.addAvailabilityBlocks(id, user.userId, body.blocks, isAdmin);
+            return c.json({ message: `${blocks.length} availability block(s) added`, code: 'AVAILABILITY_BLOCKS_ADDED', blocks }, 201);
+        }
+        catch (err) {
+            return fail(c, err, 'AVAILABILITY_BLOCKS_ADD_FAILED');
+        }
+    }
+    async getAvailability(c) {
+        try {
+            const id = c.req.param('id');
+            const startDate = c.req.query('start_date');
+            const endDate = c.req.query('end_date');
+            if (!startDate || !endDate) {
+                return c.json({ message: 'start_date and end_date are required', code: 'MISSING_DATES' }, 400);
+            }
+            const availability = await propertiesService.getAvailability(id, startDate, endDate);
+            return c.json({ availability, code: 'AVAILABILITY_FETCHED' });
+        }
+        catch (err) {
+            return fail(c, err, 'AVAILABILITY_FETCH_FAILED');
+        }
+    }
+    async deleteAvailabilityBlock(c) {
+        try {
+            const user = c.get('user');
+            const id = c.req.param('id');
+            const blockId = c.req.param('blockId');
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            await propertiesService.deleteAvailabilityBlock(blockId, id, user.userId, isAdmin);
+            return c.json({ message: 'Availability block removed', code: 'AVAILABILITY_BLOCK_DELETED' });
+        }
+        catch (err) {
+            return fail(c, err, 'AVAILABILITY_BLOCK_DELETE_FAILED');
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // BUILDINGS ENDPOINTS
+    // ─────────────────────────────────────────────────────────────────────────
+    async getBuildings(c) {
+        try {
+            const buildings = await propertiesService.getBuildings();
+            return c.json({ buildings, code: 'BUILDINGS_FETCHED' });
+        }
+        catch (err) {
+            return fail(c, err, 'BUILDINGS_FETCH_FAILED');
+        }
+    }
+    async getBuildingById(c) {
+        try {
+            const id = c.req.param('id');
+            const building = await propertiesService.getBuildingById(id);
+            return c.json({ building, code: 'BUILDING_FETCHED' });
+        }
+        catch (err) {
+            return fail(c, err, 'BUILDING_FETCH_FAILED');
+        }
+    }
+    async createBuilding(c) {
+        try {
+            const user = c.get('user');
+            const isAdmin = user.roles.some((r) => ['super_admin', 'staff'].includes(r));
+            if (!isAdmin) {
+                return c.json({ message: 'Admin role required', code: 'FORBIDDEN' }, 403);
+            }
+            const input = await c.req.json();
+            const building = await propertiesService.createBuilding(input);
+            return c.json({ message: 'Building created successfully', code: 'BUILDING_CREATED', building }, 201);
+        }
+        catch (err) {
+            return fail(c, err, 'BUILDING_CREATE_FAILED');
         }
     }
 }

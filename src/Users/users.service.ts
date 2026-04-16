@@ -431,6 +431,23 @@ export class UsersService {
   }
 
   // -------------------------------------------------------------------------
+  // SELF — GET current verification status
+  // Returns the most recent id_verifications row for this user, or null.
+  // -------------------------------------------------------------------------
+  async getMyVerification(userId: string) {
+    const { data, error } = await supabaseAdmin
+      .from('id_verifications')
+      .select('id, status, doc_type, doc_number, submitted_at, reviewed_at, rejection_reason')
+      .eq('user_id', userId)
+      .order('submitted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to fetch verification: ${error.message}`);
+    return data ?? null;
+  }
+
+  // -------------------------------------------------------------------------
   // SELF — SUBMIT ID / role verification request
   // Creates a row in id_verifications with status='pending'.
   // Staff reviews it; on approval the backend assigns the requested_role.
@@ -438,7 +455,6 @@ export class UsersService {
   async submitVerification(
     userId: string,
     body: {
-      requested_role:  'landlord' | 'developer';
       doc_type:        'national_id' | 'passport' | 'company_cert' | 'earb_license' | 'nca_cert';
       doc_number?:     string;
       front_image?:    string;   // base64 dataUrl or public URL
@@ -465,7 +481,6 @@ export class UsersService {
       .from('id_verifications')
       .insert({
         user_id:         userId,
-        requested_role:  body.requested_role,
         doc_type:        body.doc_type,
         doc_number:      body.doc_number  ?? null,
         front_image_url: body.front_image ?? null,

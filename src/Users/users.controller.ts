@@ -117,6 +117,21 @@ export class UsersController {
   }
 
   // -------------------------------------------------------------------------
+  // GET /users/me/verification
+  // Return the user's latest verification request (or null if none).
+  // -------------------------------------------------------------------------
+  async getMyVerification(c: Context) {
+    try {
+      const user = c.get('user');
+      const verification = await this.usersService.getMyVerification(user.userId);
+      return c.json({ verification, code: 'VERIFICATION_FETCHED' });
+    } catch (error: any) {
+      console.error('getMyVerification error:', error);
+      return c.json({ message: 'Failed to fetch verification status', code: 'SERVER_ERROR' }, 500);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // POST /users/me/verification
   // Submit an ID / role verification request for staff review.
   // -------------------------------------------------------------------------

@@ -11,7 +11,7 @@ client.collectDefaultMetrics({
 });
 // Create Pino logger instance
 export const logger = pino({
-    level: env.logLevel || 'info',
+    level: process.env.LOG_LEVEL || 'info',
     transport: env.isDevelopment
         ? {
             target: 'pino-pretty',

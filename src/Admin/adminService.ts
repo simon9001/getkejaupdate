@@ -687,22 +687,49 @@ export class AdminService {
   /**
    * Pending ID verifications — shown in the "Verify Users" admin tab.
    */
-  async getPendingVerifications(page = 1, limit = 20) {
+  async getPendingVerifications(page = 1, limit = 20, status = 'pending') {
     const from = (page - 1) * limit;
+
+    const VALID_STATUSES = ['pending', 'approved', 'rejected', 'expired'];
+    const safeStatus = VALID_STATUSES.includes(status) ? status : 'pending';
 
     const { data, count, error } = await supabaseAdmin
       .from('id_verifications')
       .select(`
-        id, doc_type, doc_number, status, submitted_at,
+        id, doc_type, doc_number, status, submitted_at, reviewed_at, rejection_reason,
         front_image_url, back_image_url, selfie_url,
-        users!user_id ( id, email, user_profiles(full_name, avatar_url) )
+        users!user_id (
+          id, email, phone_number,
+          user_profiles ( full_name, display_name, avatar_url )
+        )
       `, { count: 'exact' })
-      .eq('status', 'pending')
-      .order('submitted_at', { ascending: true })
+      .eq('status', safeStatus)
+      .order('submitted_at', { ascending: safeStatus === 'pending' })
       .range(from, from + limit - 1);
 
     if (error) throw new Error(`Failed to fetch verifications: ${error.message}`);
-    return { verifications: data ?? [], total: count ?? 0, page, limit, pages: Math.ceil((count ?? 0) / limit) };
+
+    // Flatten nested shape for the frontend
+    const verifications = (data ?? []).map((v: any) => ({
+      id:               v.id,
+      doc_type:         v.doc_type,
+      doc_number:       v.doc_number ?? null,
+      status:           v.status,
+      submitted_at:     v.submitted_at,
+      reviewed_at:      v.reviewed_at ?? null,
+      rejection_reason: v.rejection_reason ?? null,
+      front_image_url:  v.front_image_url ?? null,
+      back_image_url:   v.back_image_url  ?? null,
+      selfie_url:       v.selfie_url      ?? null,
+      user_id:          v.users?.id       ?? null,
+      user_email:       v.users?.email    ?? null,
+      user_phone:       v.users?.phone_number ?? null,
+      user_full_name:   v.users?.user_profiles?.full_name    ?? null,
+      user_display_name:v.users?.user_profiles?.display_name ?? null,
+      user_avatar_url:  v.users?.user_profiles?.avatar_url   ?? null,
+    }));
+
+    return { verifications, total: count ?? 0, page, limit, pages: Math.ceil((count ?? 0) / limit) };
   }
 
   /**
@@ -1240,28 +1267,52 @@ export class AdminService {
   async getPendingListings(page = 1, limit = 20) {
     const from = (page - 1) * limit;
 
+    // Properties that are available but not yet staff-reviewed (published_at IS NULL)
     const { data, count, error } = await supabaseAdmin
       .from('properties')
       .select(`
-        id, title, listing_category, listing_type, status, created_at,
+        id, title, listing_category, listing_type, status, created_at, published_at,
         property_locations ( county, area, sub_county ),
         property_pricing   ( monthly_rent, asking_price, currency ),
-        property_media     ( url, media_type, is_cover ),
-        owner:users!created_by (
+        property_media     ( url, thumbnail_url, is_cover, sort_order ),
+        owner:users!properties_created_by_fkey (
           id, email,
-          user_profiles ( full_name, avatar_url ),
-          user_roles    ( roles ( name ) )
+          user_profiles ( full_name, avatar_url )
         )
       `, { count: 'exact' })
-      .eq('status', 'pending_review')
+      .eq('status', 'available')
+      .is('published_at', null)
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .range(from, from + limit - 1);
 
     if (error) throw new Error(`Failed to fetch pending listings: ${error.message}`);
+
+    // Flatten nested objects into the shape the frontend expects
+    const listings = (data ?? []).map((p: any) => {
+      const pricing   = Array.isArray(p.property_pricing) ? p.property_pricing[0] : p.property_pricing;
+      const coverMedia = (p.property_media ?? []).find((m: any) => m.is_cover) ?? (p.property_media ?? [])[0];
+      return {
+        id:            p.id,
+        title:         p.title,
+        status:        p.status,
+        listing_category: p.listing_category,
+        property_type: p.listing_type ?? p.listing_category,
+        created_at:    p.created_at,
+        owner_email:   p.owner?.email ?? '',
+        owner_name:    p.owner?.user_profiles?.full_name ?? '',
+        owner_avatar:  p.owner?.user_profiles?.avatar_url ?? null,
+        price:         pricing?.monthly_rent ?? pricing?.asking_price ?? 0,
+        currency:      pricing?.currency ?? 'KES',
+        location:      p.property_locations,
+        media:         p.property_media ?? [],
+        cover_url:     coverMedia?.url ?? null,
+      };
+    });
+
     return {
-      listings: data ?? [],
-      total:    count ?? 0,
+      listings,
+      total: count ?? 0,
       page,
       limit,
       pages: Math.ceil((count ?? 0) / limit),
@@ -1274,9 +1325,9 @@ export class AdminService {
   async approveListing(propertyId: string, adminId: string) {
     const { error } = await supabaseAdmin
       .from('properties')
-      .update({ status: 'available', updated_at: new Date().toISOString() })
+      .update({ published_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', propertyId)
-      .eq('status', 'pending_review');
+      .is('published_at', null);
 
     if (error) throw new Error(`Failed to approve listing: ${error.message}`);
     logger.info({ propertyId, adminId }, 'admin.listing.approved');
@@ -1284,15 +1335,15 @@ export class AdminService {
   }
 
   /**
-   * Reject a pending listing — sets status back to 'draft' so the owner can edit and re-submit.
-   * Stores the rejection reason in a notes field if available, otherwise logs it.
+   * Reject a pending listing — sets status to 'off_market' so it disappears from searches.
+   * The owner will need to re-submit (contact support) to get it reviewed again.
    */
   async rejectListing(propertyId: string, adminId: string, reason: string) {
     const { error } = await supabaseAdmin
       .from('properties')
-      .update({ status: 'draft', updated_at: new Date().toISOString() })
+      .update({ status: 'off_market', updated_at: new Date().toISOString() })
       .eq('id', propertyId)
-      .eq('status', 'pending_review');
+      .is('published_at', null);
 
     if (error) throw new Error(`Failed to reject listing: ${error.message}`);
     logger.info({ propertyId, adminId, reason }, 'admin.listing.rejected');
@@ -1310,11 +1361,12 @@ export class AdminService {
    * 2. Assign the requested role to the user.
    */
   async approveVerification(verificationId: string, adminId: string) {
-    // Fetch the verification record to get user_id and requested_role, plus user info for email
+    // Fetch the verification record — no requested_role column in schema,
+    // so we infer the role from doc_type.
     const { data: ver, error: fetchErr } = await supabaseAdmin
       .from('id_verifications')
       .select(`
-        id, user_id, requested_role, status,
+        id, user_id, doc_type, status,
         users:user_id (
           email,
           user_profiles ( full_name )
@@ -1323,10 +1375,20 @@ export class AdminService {
       .eq('id', verificationId)
       .single();
 
-    if (fetchErr || !ver) throw new Error('Verification not found');
+    if (fetchErr || !ver) throw new Error(`Failed to fetch verification record: ${fetchErr?.message ?? 'not found'}`);
     if (ver.status !== 'pending') throw new Error('Verification is not pending');
 
-    // Mark as approved
+    // Infer the role the user is applying for based on their submitted doc type
+    const DOC_TO_ROLE: Record<string, string> = {
+      national_id:  'landlord',
+      passport:     'landlord',
+      company_cert: 'developer',
+      nca_cert:     'developer',
+      earb_license: 'agent',
+    };
+    const assignedRole: string = DOC_TO_ROLE[ver.doc_type] ?? 'landlord';
+
+    // Mark verification as approved
     const { error: approveErr } = await supabaseAdmin
       .from('id_verifications')
       .update({
@@ -1338,54 +1400,51 @@ export class AdminService {
 
     if (approveErr) throw new Error(`Failed to approve verification: ${approveErr.message}`);
 
-    const requestedRole: string | null = (ver as any).requested_role ?? null;
-    if (requestedRole) {
-      // Look up IDs for the new role AND the seeker role to perform the swap
-      const { data: rolesArr } = await supabaseAdmin
-        .from('roles')
-        .select('id, name')
-        .in('name', [requestedRole, 'seeker']);
+    // Look up IDs for the new role AND the seeker role
+    const { data: rolesArr } = await supabaseAdmin
+      .from('roles')
+      .select('id, name')
+      .in('name', [assignedRole, 'seeker']);
 
-      const newRoleRow    = rolesArr?.find(r => r.name === requestedRole);
-      const seekerRoleRow = rolesArr?.find(r => r.name === 'seeker');
+    const newRoleRow    = rolesArr?.find(r => r.name === assignedRole);
+    const seekerRoleRow = rolesArr?.find(r => r.name === 'seeker');
 
-      if (newRoleRow) {
-        // 1. Grant the new professional role
+    if (newRoleRow) {
+      // Grant the professional role (upsert so re-approvals don't duplicate)
+      await supabaseAdmin
+        .from('user_roles')
+        .upsert(
+          {
+            user_id:     ver.user_id,
+            role_id:     newRoleRow.id,
+            is_active:   true,
+            verified_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,role_id' },
+        );
+
+      // Remove the seeker role once a professional role is granted
+      if (seekerRoleRow) {
         await supabaseAdmin
           .from('user_roles')
-          .upsert(
-            {
-              user_id:     ver.user_id,
-              role_id:     newRoleRow.id,
-              is_active:   true,
-              verified_at: new Date().toISOString(),
-            },
-            { onConflict: 'user_id,role_id' },
-          );
-
-        // 2. REMOVE the seeker role (as requested by user)
-        if (seekerRoleRow) {
-          await supabaseAdmin
-            .from('user_roles')
-            .delete()
-            .eq('user_id', ver.user_id)
-            .eq('role_id', seekerRoleRow.id);
-        }
+          .delete()
+          .eq('user_id', ver.user_id)
+          .eq('role_id', seekerRoleRow.id);
       }
     }
 
-    // Send Approval Email
+    // Send approval email
     const userData = (ver as any).users;
     if (userData?.email) {
       await emailService.sendVerificationApprovedEmail(
         userData.email,
         userData.user_profiles?.full_name || 'Member',
-        requestedRole || 'Professional',
+        assignedRole,
       ).catch(err => logger.error({ err, userId: ver.user_id }, 'admin.approve.email_failed'));
     }
 
-    logger.info({ verificationId, adminId, requestedRole }, 'admin.verification.approved');
-    return { success: true, assigned_role: requestedRole };
+    logger.info({ verificationId, adminId, assignedRole }, 'admin.verification.approved');
+    return { success: true, assigned_role: assignedRole };
   }
 
   /**

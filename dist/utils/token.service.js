@@ -47,7 +47,7 @@ export class TokenService {
     generateAccessToken(user) {
         this.validateJwtSecret();
         const payload = {
-            userId: user.id,
+            userId: user.userId,
             email: user.email,
             roles: user.roles
         };

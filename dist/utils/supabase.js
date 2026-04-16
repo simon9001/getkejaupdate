@@ -10,7 +10,7 @@ export const supabase = supabaseAdmin;
 export async function testSupabaseConnection() {
     try {
         const { data, error, status, statusText } = await supabaseAdmin
-            .from('profiles')
+            .from('users')
             .select('id')
             .limit(1);
         if (error) {

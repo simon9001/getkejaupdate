@@ -45,10 +45,11 @@ import { usersRouter } from './Users/users.routes.js';
 
 import { propertiesRouter } from './Properties/properties.routes.js';
 import { landlordRouter }   from './Properties/landlord.router.js';
+import { searchRouter }     from './serches/searchRoutes.js';
 // import { spatialRouter }    from './Spatial/spatial.routes.js';
 // import { dashboardRouter }  from './Dashboard/dashboard.routes.js';
 // import { uploadRouter }     from './Upload/upload.routes.js';
-// import { chatRouter }       from './Chat/chat.routes.js';
+import { chatRouter }       from './Chat/chat.routes.js';
 
 import { apiRateLimiter, authRateLimiter } from './middleware/rateLimiter.js';
 // import cron                 from 'node-cron';
@@ -254,11 +255,12 @@ app.get('/metrics', async (c) => {
 app.route('/api/auth',                authRouter);
 app.route('/api/users',               usersRouter);
 app.route('/api/properties',          propertiesRouter);       // public + admin routes
-app.route('/api/landlord',            landlordRouter);          // landlord/agent/developer CRUD
+app.route('/api/landlord/properties', landlordRouter);         // landlord/agent/developer CRUD
+app.route('/api/search',              searchRouter);           // public search (text, nearby, map)
 // app.route('/api/spatial',    spatialRouter);
 // app.route('/api/dashboard',  dashboardRouter);
 // app.route('/api/upload',     uploadRouter);
-// app.route('/api/chat',       chatRouter);
+app.route('/api/chat',       chatRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. 404 handler

@@ -142,7 +142,7 @@ export class PropertiesService {
         management_model:    coreFields.management_model,
         title:               coreFields.title,
         description:         coreFields.description          ?? null,
-        status:              'available',    // always starts available
+        status:              'available',       // visible immediately; published_at=null flags it for staff review
         construction_status: coreFields.construction_status,
         year_built:          coreFields.year_built           ?? null,
         floor_area_sqm:      coreFields.floor_area_sqm       ?? null,
@@ -582,7 +582,8 @@ export class PropertiesService {
           total_units_in_project, units_sold, payment_plan, escrow_bank, nca_reg_number
         ),
         owner:users!properties_created_by_fkey (
-          id, full_name, avatar_url, is_verified
+          id, email,
+          user_profiles ( full_name, avatar_url )
         )
       `)
       .eq('id', propertyId)
@@ -624,7 +625,8 @@ export class PropertiesService {
         { count: 'exact' },
       )
       .is('deleted_at', null)
-      .eq('status', status ?? 'available');
+      .eq('status', status ?? 'available')
+      .not('published_at', 'is', null); // only show staff-approved listings
 
     if (listing_category)    query = query.eq('listing_category', listing_category);
     if (listing_type)        query = query.eq('listing_type', listing_type);
@@ -648,7 +650,7 @@ export class PropertiesService {
     if (area)   query = query.ilike('property_locations.area',   `%${area}%`);
 
     const { data, count, error } = await query
-      .order('listing_search_scores.total_score', { ascending: false, nullsFirst: false })
+      .order('total_score', { referencedTable: 'listing_search_scores', ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .range(from, to);
 
@@ -1198,7 +1200,12 @@ export class PropertiesService {
   // ─────────────────────────────────────────────────────────────────────────
   // OWNER — my properties
   // ─────────────────────────────────────────────────────────────────────────
-  async getMyProperties(userId: string, filters: { status?: string } = {}) {
+  async getMyProperties(userId: string, filters: { status?: string; page?: number; limit?: number; search?: string } = {}) {
+    const page  = Math.max(1, filters.page  ?? 1);
+    const limit = Math.min(50, filters.limit ?? 20);
+    const from  = (page - 1) * limit;
+    const to    = from + limit - 1;
+
     let query = supabaseAdmin
       .from('properties')
       .select(`
@@ -1207,20 +1214,30 @@ export class PropertiesService {
         property_locations ( county, area, latitude, longitude ),
         property_pricing   ( asking_price, monthly_rent, currency ),
         property_media     ( url, is_cover, sort_order )
-      `)
+      `, { count: 'exact' })
       .eq('created_by', userId)
       .is('deleted_at', null);
 
-    if (filters.status) {
-      query = query.eq('status', filters.status);
-    }
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.search) query = query.ilike('title', `%${filters.search}%`);
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, count, error } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (error) throw new Error(`Failed to fetch your properties: ${error.message}`);
-    return (data ?? [])
+
+    const properties = (data ?? [])
       .map((row) => this.formatProperty(row))
       .filter((p): p is NonNullable<ReturnType<typeof this.formatProperty>> => p !== null);
+
+    return {
+      properties,
+      total: count ?? 0,
+      page,
+      limit,
+      pages: Math.ceil((count ?? 0) / limit),
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1450,10 +1467,14 @@ export class PropertiesService {
     const commercial = Array.isArray(raw.commercial_config) ? raw.commercial_config[0] : raw.commercial_config;
     const plot = Array.isArray(raw.plot_details) ? raw.plot_details[0] : raw.plot_details;
     const offplan = Array.isArray(raw.offplan_details) ? raw.offplan_details[0] : raw.offplan_details;
+    const ownerProfile = raw.owner
+      ? (Array.isArray(raw.owner.user_profiles) ? raw.owner.user_profiles[0] : raw.owner.user_profiles)
+      : null;
 
     return {
       id:                 raw.id,
       listing_category:   raw.listing_category,
+      category:           raw.listing_category, // alias used by VacationHub filter
       listing_type:       raw.listing_type,
       management_model:   raw.management_model,
       title:              raw.title,
@@ -1494,6 +1515,14 @@ export class PropertiesService {
         verification: score.verification_score,
       } : null,
       
+      // Owner (populated only on getPropertyById which joins users + user_profiles)
+      owner: raw.owner ? {
+        id:         raw.owner.id,
+        email:      raw.owner.email,
+        full_name:  ownerProfile?.full_name  ?? null,
+        avatar_url: ownerProfile?.avatar_url ?? null,
+      } : null,
+
       // Type-specific details
       rental_unit: rentalUnit ?? null,
       short_term_config: shortTerm ?? null,

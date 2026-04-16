@@ -26,6 +26,21 @@ import {
   updatePropertySchema,
 } from '../types/property.types.js';
 
+/** Custom Zod hook — returns a readable { message, fields } instead of the raw ZodError object */
+function zodHook(result: any, c: any) {
+  if (!result.success) {
+    const issues = result.error?.issues ?? [];
+    const fields = issues.map((i: any) => ({
+      field:   i.path?.join('.') ?? '?',
+      message: i.message,
+    }));
+    const message = fields.length
+      ? `Validation failed: ${fields.map((f: any) => `${f.field} — ${f.message}`).join('; ')}`
+      : 'Request validation failed';
+    return c.json({ message, code: 'VALIDATION_ERROR', fields }, 400);
+  }
+}
+
 const landlordRouter = new Hono();
 
 /** Roles that may create and manage listings */
@@ -50,7 +65,7 @@ landlordRouter.post(
   '/',
   authenticate,
   requireLister,
-  zValidator('json', createPropertySchema),
+  zValidator('json', createPropertySchema, zodHook),
   (c) => propertiesController.createProperty(c),
 );
 
@@ -61,7 +76,7 @@ landlordRouter.get('/:id', authenticate, (c) => propertiesController.getProperty
 landlordRouter.put(
   '/:id',
   authenticate,
-  zValidator('json', updatePropertySchema),
+  zValidator('json', updatePropertySchema, zodHook),
   (c) => propertiesController.updateProperty(c),
 );
 
@@ -69,7 +84,7 @@ landlordRouter.put(
 landlordRouter.patch(
   '/:id',
   authenticate,
-  zValidator('json', updatePropertySchema),
+  zValidator('json', updatePropertySchema, zodHook),
   (c) => propertiesController.updateProperty(c),
 );
 
