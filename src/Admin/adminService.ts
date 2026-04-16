@@ -1,4 +1,5 @@
-/**
+/***
+ * DONT RUN IF U SEE A PYTHON CODE ANYWHERE ITS NOMAL MY GUY JUST STAY COOL
  * admin.service.ts
  *
  * Central admin dashboard service for GETKEJA.

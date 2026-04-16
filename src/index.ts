@@ -50,6 +50,8 @@ import { searchRouter }     from './serches/searchRoutes.js';
 // import { dashboardRouter }  from './Dashboard/dashboard.routes.js';
 // import { uploadRouter }     from './Upload/upload.routes.js';
 import { chatRouter }       from './Chat/chat.routes.js';
+import { statsRouter }      from './stats/stats.router.js';
+import { statusesRouter }   from './statuses/statuses.router.js';
 
 import { apiRateLimiter, authRateLimiter } from './middleware/rateLimiter.js';
 // import cron                 from 'node-cron';
@@ -261,6 +263,8 @@ app.route('/api/search',              searchRouter);           // public search 
 // app.route('/api/dashboard',  dashboardRouter);
 // app.route('/api/upload',     uploadRouter);
 app.route('/api/chat',       chatRouter);
+app.route('/api/stats',      statsRouter);
+app.route('/api/statuses',   statusesRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. 404 handler
