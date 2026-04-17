@@ -379,7 +379,7 @@ export class UsersService {
     }));
 
     if (roleFilter) {
-      users = users.filter((u) => u.roles.includes(roleFilter));
+      users = users.filter((u: { roles: string | string[]; }) => u.roles.includes(roleFilter));
     }
 
     return {
