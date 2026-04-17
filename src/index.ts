@@ -42,6 +42,8 @@ import { testSupabaseConnection }  from './utils/supabase.js';
 
 import { authRouter }  from './Auth/auth.routes.js';
 import { usersRouter } from './Users/users.routes.js';
+import { userRouter }    from './user/user.router.js';
+import { contactRouter } from './contact/contact.router.js';
 
 import { propertiesRouter } from './Properties/properties.routes.js';
 import { landlordRouter }   from './Properties/landlord.router.js';
@@ -256,6 +258,8 @@ app.get('/metrics', async (c) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.route('/api/auth',                authRouter);
 app.route('/api/users',               usersRouter);
+app.route('/api/user',                userRouter);
+app.route('/api/contact',             contactRouter);
 app.route('/api/properties',          propertiesRouter);       // public + admin routes
 app.route('/api/landlord/properties', landlordRouter);         // landlord/agent/developer CRUD
 app.route('/api/search',              searchRouter);           // public search (text, nearby, map)

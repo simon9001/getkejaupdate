@@ -320,6 +320,92 @@ export class EmailService {
       html: this.wrap('Verification', 'Update', body, email),
     });
   }
+
+  // ── Contact form ──────────────────────────────────────────────────────────
+
+  async sendContactNotification(data: {
+    name: string; email: string; phone?: string; topic?: string; message: string;
+  }): Promise<void> {
+    const adminEmail = process.env.ADMIN_EMAIL ?? 'simongatungo300@gmail.com';
+    const body = `
+      <h2>New Contact Message</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <tr><td style="padding:8px;color:#718096;width:120px">Name</td><td style="padding:8px;font-weight:600">${data.name}</td></tr>
+        <tr style="background:#FCFAF2"><td style="padding:8px;color:#718096">Email</td><td style="padding:8px"><a href="mailto:${data.email}" style="color:#D4A373">${data.email}</a></td></tr>
+        ${data.phone ? `<tr><td style="padding:8px;color:#718096">Phone</td><td style="padding:8px">${data.phone}</td></tr>` : ''}
+        ${data.topic ? `<tr style="background:#FCFAF2"><td style="padding:8px;color:#718096">Topic</td><td style="padding:8px">${data.topic}</td></tr>` : ''}
+      </table>
+      <div style="background:#FCFAF2;border-radius:14px;padding:16px;margin-top:16px">
+        <strong style="font-size:13px;color:#8B6E4E;text-transform:uppercase;letter-spacing:0.5px">Message</strong>
+        <p style="margin:8px 0 0;color:#1B2430;white-space:pre-wrap">${data.message}</p>
+      </div>
+      <div style="text-align:center;margin-top:24px">
+        <a href="mailto:${data.email}?subject=Re: ${encodeURIComponent(data.topic ?? 'Your message')}" class="btn">Reply to ${data.name}</a>
+      </div>
+    `;
+
+    await this.sendEmail({
+      to: adminEmail,
+      subject: `[Getkeja Contact] ${data.topic ?? 'General Enquiry'} from ${data.name}`,
+      html: this.wrap('New Contact', 'Message', body),
+      replyTo: data.email,
+    });
+  }
+
+  async sendContactConfirmation(data: { name: string; email: string; topic?: string }): Promise<void> {
+    const body = `
+      <h2>Hello ${data.name},</h2>
+      <p>Thank you for reaching out! We've received your message${data.topic ? ` about <strong>${data.topic}</strong>` : ''} and our team will get back to you within <strong>2 hours</strong> during business hours (Mon – Fri, 8am – 6pm EAT).</p>
+      <div class="pill">📬 Your message has been received</div>
+      <p>In the meantime, you can:</p>
+      <ul style="color:#4A5568;font-size:15px;line-height:2">
+        <li>Browse properties at <a href="${this.baseUrl()}" style="color:#D4A373">getkeja.online</a></li>
+        <li>Check our <a href="${this.baseUrl()}/help" style="color:#D4A373">Help Center</a> for quick answers</li>
+        <li>WhatsApp us at +254 757 568 845 for urgent issues</li>
+      </ul>
+      <p style="font-size:13px;color:#718096;margin-top:24px">This is an automated confirmation — please do not reply to this email. Use <a href="mailto:hello@getkeja.online" style="color:#D4A373">hello@getkeja.online</a> for follow-ups.</p>
+    `;
+
+    await this.sendEmail({
+      to: data.email,
+      subject: "We've received your message — Getkeja",
+      html: this.wrap("We've Got", 'Your Message', body, data.email),
+    });
+  }
+
+  async sendNewsletterWelcome(email: string): Promise<void> {
+    const adminEmail = process.env.ADMIN_EMAIL ?? 'simongatungo300@gmail.com';
+
+    // Notify admin
+    await this.sendEmail({
+      to: adminEmail,
+      subject: `[Getkeja Newsletter] New subscriber: ${email}`,
+      html: this.wrap('New Newsletter', 'Subscriber', `<h2>New subscriber</h2><p><a href="mailto:${email}" style="color:#D4A373">${email}</a> just subscribed to the Getkeja newsletter.</p>`),
+    }).catch(() => {}); // don't fail the user flow if admin email fails
+
+    // Confirm to subscriber
+    const body = `
+      <h2>You're on the list! 🎉</h2>
+      <p>Thanks for subscribing to the Getkeja newsletter. Here's what you'll get in your inbox:</p>
+      <div style="display:grid;gap:12px;margin:24px 0">
+        ${[['🏠','New Listings','Fresh verified properties added weekly'],['📈','Market Insights','Nairobi & Kenya property market updates'],['💡','Tips & Guides','Renting, buying, and investing advice'],['🎁','Exclusive Deals','Early access to promotions and offers']].map(([icon,title,sub])=>`
+        <div style="background:#FCFAF2;border-radius:12px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start">
+          <span style="font-size:22px">${icon}</span>
+          <div><strong style="font-size:14px">${title}</strong><p style="font-size:12px;color:#718096;margin:2px 0">${sub}</p></div>
+        </div>`).join('')}
+      </div>
+      <div style="text-align:center"><a href="${this.baseUrl()}" class="btn">Browse Properties</a></div>
+      <p style="font-size:12px;color:#718096;margin-top:24px;text-align:center">
+        You can unsubscribe at any time by replying with "unsubscribe" to this email.
+      </p>
+    `;
+
+    await this.sendEmail({
+      to: email,
+      subject: "Welcome to the Getkeja Newsletter! 🏠",
+      html: this.wrap('Welcome to the', 'Newsletter', body, email),
+    });
+  }
 }
 
 export const emailService = new EmailService();
