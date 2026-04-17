@@ -48,9 +48,9 @@ import { contactRouter } from './contact/contact.router.js';
 import { propertiesRouter } from './Properties/properties.routes.js';
 import { landlordRouter }   from './Properties/landlord.router.js';
 import { searchRouter }     from './serches/searchRoutes.js';
+import { uploadRouter }     from './Upload/upload.routes.js';
 // import { spatialRouter }    from './Spatial/spatial.routes.js';
 // import { dashboardRouter }  from './Dashboard/dashboard.routes.js';
-// import { uploadRouter }     from './Upload/upload.routes.js';
 import { chatRouter }       from './Chat/chat.routes.js';
 import { statsRouter }      from './stats/stats.router.js';
 import { statusesRouter }   from './statuses/statuses.router.js';
@@ -263,9 +263,9 @@ app.route('/api/contact',             contactRouter);
 app.route('/api/properties',          propertiesRouter);       // public + admin routes
 app.route('/api/landlord/properties', landlordRouter);         // landlord/agent/developer CRUD
 app.route('/api/search',              searchRouter);           // public search (text, nearby, map)
+app.route('/api/upload',     uploadRouter);
 // app.route('/api/spatial',    spatialRouter);
 // app.route('/api/dashboard',  dashboardRouter);
-// app.route('/api/upload',     uploadRouter);
 app.route('/api/chat',       chatRouter);
 app.route('/api/stats',      statsRouter);
 app.route('/api/statuses',   statusesRouter);
