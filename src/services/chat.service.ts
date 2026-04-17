@@ -99,13 +99,52 @@ export class ChatService {
 
     if (error) throw new Error(`Failed to fetch conversations: ${error.message}`);
 
-    // Attach unread count from the user's perspective
-    const result = (data ?? []).map((c: any) => ({
-      ...c,
-      unread_count: c.participant_a === userId ? c.unread_a : c.unread_b,
-      is_archived:  c.participant_a === userId ? c.archived_by_a : c.archived_by_b,
-      other_participant_id: c.participant_a === userId ? c.participant_b : c.participant_a,
-    }));
+    // Collect all unique participant IDs so we can fetch their profiles in one query
+    const participantIds = new Set<string>();
+    for (const conv of data ?? []) {
+      participantIds.add(conv.participant_a);
+      participantIds.add(conv.participant_b);
+    }
+
+    const profileMap: Record<string, { full_name: string | null; avatar_url: string | null }> = {};
+    if (participantIds.size > 0) {
+      const { data: profiles } = await supabaseAdmin
+        .from('user_profiles')
+        .select('user_id, full_name, avatar_url')
+        .in('user_id', Array.from(participantIds));
+
+      for (const p of profiles ?? []) {
+        profileMap[p.user_id] = { full_name: p.full_name, avatar_url: p.avatar_url };
+      }
+
+      // Also fetch emails for fallback display names
+      const { data: users } = await supabaseAdmin
+        .from('users')
+        .select('id, email')
+        .in('id', Array.from(participantIds));
+
+      for (const u of users ?? []) {
+        if (!profileMap[u.id]) profileMap[u.id] = { full_name: u.email, avatar_url: null };
+        else if (!profileMap[u.id].full_name) profileMap[u.id].full_name = u.email;
+      }
+    }
+
+    // Attach computed fields + other participant profile
+    const result = (data ?? []).map((c: any) => {
+      const otherParticipantId = c.participant_a === userId ? c.participant_b : c.participant_a;
+      const otherProfile = profileMap[otherParticipantId] ?? { full_name: 'Unknown', avatar_url: null };
+      return {
+        ...c,
+        unread_count:         c.participant_a === userId ? c.unread_a    : c.unread_b,
+        is_archived:          c.participant_a === userId ? c.archived_by_a : c.archived_by_b,
+        other_participant_id: otherParticipantId,
+        other_participant: {
+          id:         otherParticipantId,
+          full_name:  otherProfile.full_name  ?? 'Unknown',
+          avatar_url: otherProfile.avatar_url ?? null,
+        },
+      };
+    });
 
     return { conversations: result, total: count ?? 0, page, limit };
   }

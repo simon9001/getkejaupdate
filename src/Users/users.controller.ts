@@ -159,8 +159,10 @@ export class UsersController {
       const page   = Math.max(1, Number(c.req.query('page'))  || 1);
       const limit  = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 20));
       const search = c.req.query('search') || '';
+      const role   = c.req.query('role')   || '';
+      const status = c.req.query('status') || '';
 
-      const result = await this.usersService.getAllUsers(page, limit, search);
+      const result = await this.usersService.getAllUsers(page, limit, search, role, status);
       return c.json({ ...result, code: 'USERS_FETCHED' });
     } catch (error: any) {
       console.error('getAllUsers error:', error);

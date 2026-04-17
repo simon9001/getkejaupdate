@@ -287,69 +287,107 @@ export class UsersService {
   // -------------------------------------------------------------------------
   // ADMIN — GET paginated user list
   // -------------------------------------------------------------------------
-  async getAllUsers(page = 1, limit = 10, search = '') {
+  async getAllUsers(page = 1, limit = 10, search = '', roleFilter = '', statusFilter = '') {
     const from = (page - 1) * limit;
-    const to = from + limit - 1;
+    const to   = from + limit - 1;
 
-    // Base query on `users` joined to `user_profiles` and `user_roles → roles`
+    // ── Step 1: query users + profiles (no nested role join — avoids PostgREST
+    //            double-nested join issues with user_roles → roles) ────────────
     let query = supabaseAdmin
       .from('users')
       .select(
         `id, email, phone_number, account_status, email_verified, auth_provider, created_at,
-         user_profiles(full_name, display_name, avatar_url, county),
-         user_roles(is_active, roles(name))`,
+         user_profiles ( full_name, display_name, avatar_url, county )`,
         { count: 'exact' },
       )
       .is('deleted_at', null);
 
+    // Optional status filter
+    if (statusFilter) {
+      query = (query as any).eq('account_status', statusFilter);
+    }
+
+    // Search: email match OR full_name match (two-step, PostgREST limitation)
     if (search) {
-      // Search on email (users table) — full_name search requires a separate approach
-      // because Supabase PostgREST can't OR across joined tables in a single filter.
-      // We do a two-pronged approach: search users by email OR fetch profile IDs by name.
       const { data: profileMatches } = await supabaseAdmin
         .from('user_profiles')
         .select('user_id')
         .ilike('full_name', `%${search}%`);
 
-      const profileIds = (profileMatches ?? []).map((p) => p.user_id);
+      const profileIds = (profileMatches ?? []).map((p: any) => p.user_id);
 
       if (profileIds.length > 0) {
-        query = query.or(`email.ilike.%${search}%,id.in.(${profileIds.join(',')})`);
+        query = (query as any).or(`email.ilike.%${search}%,id.in.(${profileIds.join(',')})`);
       } else {
-        query = query.ilike('email', `%${search}%`);
+        query = (query as any).ilike('email', `%${search}%`);
       }
     }
 
-    const { data, count, error } = await query
+    const { data, count, error } = await (query as any)
       .order('created_at', { ascending: false })
       .range(from, to);
 
     if (error) throw error;
 
-    const users = (data ?? []).map((u: any) => ({
-      id: u.id,
-      email: u.email,
-      phone: u.phone_number ?? null,
+    // ── Step 2: fetch roles for returned user IDs in one separate query ───────
+    const userIds: string[] = (data ?? []).map((u: any) => u.id);
+    const rolesMap: Record<string, string[]> = {};
+
+    if (userIds.length > 0) {
+      const { data: roleRows } = await supabaseAdmin
+        .from('user_roles')
+        .select('user_id, role_id, is_active')
+        .in('user_id', userIds)
+        .eq('is_active', true);
+
+      // Resolve role IDs → names
+      const uniqueRoleIds = [...new Set((roleRows ?? []).map((r: any) => r.role_id))];
+      let roleNameMap: Record<number, string> = {};
+
+      if (uniqueRoleIds.length > 0) {
+        const { data: roleNames } = await supabaseAdmin
+          .from('roles')
+          .select('id, name')
+          .in('id', uniqueRoleIds);
+
+        for (const r of roleNames ?? []) {
+          roleNameMap[r.id] = r.name;
+        }
+      }
+
+      for (const row of roleRows ?? []) {
+        if (!rolesMap[row.user_id]) rolesMap[row.user_id] = [];
+        const name = roleNameMap[(row as any).role_id];
+        if (name) rolesMap[row.user_id].push(name);
+      }
+    }
+
+    // ── Step 3: apply optional role filter in memory ─────────────────────────
+    let users = (data ?? []).map((u: any) => ({
+      id:             u.id,
+      email:          u.email,
+      phone:          u.phone_number ?? null,
       account_status: u.account_status,
       email_verified: u.email_verified,
-      auth_provider: u.auth_provider,
-      created_at: u.created_at,
-      full_name: u.user_profiles?.full_name ?? null,
-      display_name: u.user_profiles?.display_name ?? null,
-      avatar_url: u.user_profiles?.avatar_url ?? null,
-      county: u.user_profiles?.county ?? null,
-      roles: (u.user_roles ?? [])
-        .filter((r: any) => r.is_active)
-        .map((r: any) => r.roles?.name)
-        .filter(Boolean),
+      auth_provider:  u.auth_provider,
+      created_at:     u.created_at,
+      full_name:      u.user_profiles?.full_name    ?? null,
+      display_name:   u.user_profiles?.display_name ?? null,
+      avatar_url:     u.user_profiles?.avatar_url   ?? null,
+      county:         u.user_profiles?.county       ?? null,
+      roles:          rolesMap[u.id] ?? [],
     }));
+
+    if (roleFilter) {
+      users = users.filter((u) => u.roles.includes(roleFilter));
+    }
 
     return {
       users,
-      total: count ?? 0,
+      total:  count ?? 0,
       page,
       limit,
-      pages: Math.ceil((count ?? 0) / limit),
+      pages:  Math.ceil((count ?? 0) / limit),
     };
   }
 
