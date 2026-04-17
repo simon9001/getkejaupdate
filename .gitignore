@@ -14,7 +14,7 @@ node_modules/
 # env
 .env
 .env.production
-.dist
+dist/
 
 # logs
 logs/
