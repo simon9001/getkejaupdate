@@ -212,4 +212,22 @@ landlordRouter.get('/profile', (c) => landlordController.getProfile(c));
 landlordRouter.patch('/profile', (c) => landlordController.updateProfile(c));
 landlordRouter.post('/profile/verify', (c) => landlordController.submitVerification(c));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TENANTS (long-term + short-stay guests in home)
+// ─────────────────────────────────────────────────────────────────────────────
+
+landlordRouter.get('/tenants', (c) => landlordController.getAllTenants(c));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHORT-STAY PAYMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+landlordRouter.get('/short-stay/payments', (c) => landlordController.getShortStayPayments(c));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FULL REPORTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+landlordRouter.get('/reports/full', (c) => landlordController.getFullReport(c));
+
 export { landlordRouter };

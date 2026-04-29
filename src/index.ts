@@ -47,6 +47,13 @@ import { contactRouter } from './contact/contact.router.js';
 
 import { propertiesRouter } from './Properties/properties.routes.js';
 import { landlordRouter }   from './Properties/landlord.router.js';
+import { landlordRouter as landlordDashboardRouter } from './Landlord/landlord.router.js';
+import { caretakerRouter }  from './caretaker/caretaker.router.js';
+import { staffRouter }      from './staff/staff.router.js';
+import { agentRouter }      from './agent/agent.router.js';
+import { developerRouter }  from './developer/developer.router.js';
+import { roommateRouter }   from './roommate/roommate.router.js';
+import { movingRouter }     from './moving/moving.router.js';
 import { searchRouter }     from './serches/searchRoutes.js';
 import { uploadRouter }     from './Upload/upload.routes.js';
 // import { spatialRouter }    from './Spatial/spatial.routes.js';
@@ -262,6 +269,13 @@ app.route('/api/user',                userRouter);
 app.route('/api/contact',             contactRouter);
 app.route('/api/properties',          propertiesRouter);       // public + admin routes
 app.route('/api/landlord/properties', landlordRouter);         // landlord/agent/developer CRUD
+app.route('/api/landlord',            landlordDashboardRouter); // dashboard, tenancies, visits, team, revenue
+app.route('/api/caretaker',           caretakerRouter);        // caretaker dashboard, maintenance, tenants
+app.route('/api/staff',               staffRouter);            // staff moderation dashboard
+app.route('/api/agent',               agentRouter);            // agent dashboard KPIs + viewings, leads, commissions
+app.route('/api/developer',           developerRouter);         // developer pipeline + unit tracker
+app.route('/api/roommate',            roommateRouter);           // roommate finder — profiles + connections
+app.route('/api/moving',              movingRouter);             // moving services — companies + quotes
 app.route('/api/search',              searchRouter);           // public search (text, nearby, map)
 app.route('/api/upload',     uploadRouter);
 // app.route('/api/spatial',    spatialRouter);

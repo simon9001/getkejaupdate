@@ -697,6 +697,38 @@ export class LandlordController {
       return c.json({ ...data, code: 'VERIFICATION_SUBMITTED' });
     } catch (err) { return fail(c, err, 'VERIFICATION_SUBMIT_FAILED'); }
   }
+
+  // ─── TENANTS (long-term + short-stay guests) ──────────────────────────────
+
+  async getAllTenants(c: Context) {
+    try {
+      const userId = c.get('user').userId;
+      const data = await landlordService.getAllTenants(userId);
+      return c.json({ ...data, code: 'TENANTS_FETCHED' });
+    } catch (err) { return fail(c, err, 'TENANTS_FETCH_FAILED'); }
+  }
+
+  // ─── SHORT-STAY PAYMENTS ──────────────────────────────────────────────────
+
+  async getShortStayPayments(c: Context) {
+    try {
+      const userId = c.get('user').userId;
+      const page  = Number(c.req.query('page'))  || 1;
+      const limit = Number(c.req.query('limit')) || 20;
+      const data = await landlordService.getShortStayPayments(userId, page, limit);
+      return c.json({ ...data, code: 'SS_PAYMENTS_FETCHED' });
+    } catch (err) { return fail(c, err, 'SS_PAYMENTS_FAILED'); }
+  }
+
+  // ─── FULL REPORTS ─────────────────────────────────────────────────────────
+
+  async getFullReport(c: Context) {
+    try {
+      const userId = c.get('user').userId;
+      const data = await landlordService.getFullReport(userId);
+      return c.json({ ...data, code: 'REPORT_FETCHED' });
+    } catch (err) { return fail(c, err, 'REPORT_FAILED'); }
+  }
 }
 
 export const landlordController = new LandlordController();

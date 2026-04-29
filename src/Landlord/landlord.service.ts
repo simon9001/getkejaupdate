@@ -1604,6 +1604,223 @@ export class LandlordService {
 
     return shortStayTotal + monthlyRentTotal;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ALL TENANTS — long-term + short-stay guests currently in home
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getAllTenants(userId: string) {
+    const { data: myProps } = await supabaseAdmin
+      .from('properties')
+      .select('id, title')
+      .eq('created_by', userId)
+      .is('deleted_at', null);
+
+    const propertyIds = (myProps ?? []).map((p: any) => p.id);
+    const propMap: Record<string, string> = {};
+    for (const p of myProps ?? []) propMap[p.id] = p.title;
+
+    if (propertyIds.length === 0) {
+      return { long_term: [], short_stay_guests: [], total: 0 };
+    }
+
+    const [longTermResult, shortStayResult] = await Promise.all([
+      // Active long-term tenancies
+      supabaseAdmin
+        .from('long_term_bookings')
+        .select(`
+          id, monthly_rent_kes, start_date, end_date, status, created_at,
+          property_id,
+          tenant:tenant_user_id (id, full_name, email, phone, avatar_url)
+        `)
+        .eq('landlord_user_id', userId)
+        .in('status', ['active', 'pending'])
+        .order('created_at', { ascending: false }),
+
+      // Guests currently checked in on short-stay
+      supabaseAdmin
+        .from('short_stay_bookings')
+        .select(`
+          id, check_in_date, check_out_date, status, guests_count,
+          total_kes, booking_ref, property_id,
+          guest:guest_user_id (id, full_name, email, phone, avatar_url)
+        `)
+        .eq('host_user_id', userId)
+        .in('status', ['checked_in', 'confirmed'])
+        .order('check_in_date', { ascending: true }),
+    ]);
+
+    const longTerm = (longTermResult.data ?? []).map((b: any) => ({
+      ...b,
+      property_title: propMap[b.property_id] ?? 'Property',
+      type: 'long_term',
+    }));
+
+    const shortStayGuests = (shortStayResult.data ?? []).map((b: any) => ({
+      ...b,
+      property_title: propMap[b.property_id] ?? 'Property',
+      type: 'short_stay',
+    }));
+
+    logger.info({ userId, longTerm: longTerm.length, guests: shortStayGuests.length }, 'landlord.getAllTenants');
+
+    return {
+      long_term:          longTerm,
+      short_stay_guests:  shortStayGuests,
+      total:              longTerm.length + shortStayGuests.length,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHORT-STAY PAYMENTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getShortStayPayments(userId: string, page = 1, limit = 20) {
+    const offset = (page - 1) * limit;
+
+    const { data: bookings, count } = await supabaseAdmin
+      .from('short_stay_bookings')
+      .select(`
+        id, booking_ref, check_in_date, check_out_date, status,
+        total_kes, host_payout_kes, platform_fee_kes, created_at,
+        property:property_id (id, title),
+        guest:guest_user_id (id, full_name, email, phone)
+      `, { count: 'exact' })
+      .eq('host_user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    // Summary totals
+    const { data: totals } = await supabaseAdmin
+      .from('short_stay_bookings')
+      .select('total_kes, host_payout_kes, status')
+      .eq('host_user_id', userId);
+
+    const allBookings = totals ?? [];
+    const totalRevenue    = allBookings.reduce((s: number, b: any) => s + (b.host_payout_kes ?? 0), 0);
+    const pendingPayments = allBookings
+      .filter((b: any) => b.status === 'confirmed')
+      .reduce((s: number, b: any) => s + (b.host_payout_kes ?? 0), 0);
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const thisMonth = allBookings
+      .filter((b: any) => b.created_at >= startOfMonth)
+      .reduce((s: number, b: any) => s + (b.host_payout_kes ?? 0), 0);
+
+    logger.info({ userId, count }, 'landlord.getShortStayPayments');
+
+    return {
+      transactions:       bookings ?? [],
+      total:              count ?? 0,
+      page,
+      limit,
+      summary: {
+        total_revenue_kes:     Math.round(totalRevenue),
+        pending_payments_kes:  Math.round(pendingPayments),
+        this_month_kes:        Math.round(thisMonth),
+      },
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FULL REPORTS — short stay + long term combined
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getFullReport(userId: string) {
+    const { data: myProps, count: totalProps } = await supabaseAdmin
+      .from('properties')
+      .select('id, listing_category, status', { count: 'exact' })
+      .eq('created_by', userId)
+      .is('deleted_at', null);
+
+    const propertyIds = (myProps ?? []).map((p: any) => p.id);
+
+    if (propertyIds.length === 0) {
+      return {
+        total_properties: 0,
+        occupancy_rate_pct: 0,
+        short_stay: { bookings: 0, revenue_kes: 0, avg_stay_nights: 0 },
+        long_term:  { active_tenancies: 0, monthly_income_kes: 0, pending_applications: 0 },
+        by_category: {},
+        generated_at: new Date().toISOString(),
+      };
+    }
+
+    const [ssResult, ltActive, ltPending, ltRent] = await Promise.all([
+      // Short-stay bookings summary
+      supabaseAdmin
+        .from('short_stay_bookings')
+        .select('id, host_payout_kes, check_in_date, check_out_date, status')
+        .eq('host_user_id', userId)
+        .in('status', ['confirmed', 'checked_in', 'checked_out', 'completed']),
+
+      // Active long-term tenancies
+      supabaseAdmin
+        .from('long_term_bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('landlord_user_id', userId)
+        .eq('status', 'active'),
+
+      // Pending applications
+      supabaseAdmin
+        .from('long_term_bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('landlord_user_id', userId)
+        .eq('status', 'pending'),
+
+      // Monthly income from active tenancies
+      supabaseAdmin
+        .from('long_term_bookings')
+        .select('monthly_rent_kes')
+        .eq('landlord_user_id', userId)
+        .eq('status', 'active'),
+    ]);
+
+    const ssBookings = ssResult.data ?? [];
+    const ssRevenue = ssBookings.reduce((s: number, b: any) => s + (b.host_payout_kes ?? 0), 0);
+    const ssNights = ssBookings.reduce((s: number, b: any) => {
+      if (!b.check_in_date || !b.check_out_date) return s;
+      const nights = Math.ceil(
+        (new Date(b.check_out_date).getTime() - new Date(b.check_in_date).getTime())
+        / (1000 * 60 * 60 * 24)
+      );
+      return s + nights;
+    }, 0);
+
+    const monthlyIncome = (ltRent.data ?? []).reduce(
+      (s: number, b: any) => s + (b.monthly_rent_kes ?? 0), 0
+    );
+
+    const activeTenancies = (ltActive as any).count ?? 0;
+    const occupied = activeTenancies + ssBookings.filter((b: any) => b.status === 'checked_in').length;
+    const occupancyRate = (myProps ?? []).length > 0
+      ? Math.min(100, Math.round((occupied / (myProps ?? []).length) * 100))
+      : 0;
+
+    const byCategory = (myProps ?? []).reduce((acc: Record<string, number>, p: any) => {
+      const cat = p.listing_category ?? 'other';
+      acc[cat] = (acc[cat] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      total_properties:    totalProps ?? 0,
+      occupancy_rate_pct:  occupancyRate,
+      short_stay: {
+        bookings:         ssBookings.length,
+        revenue_kes:      Math.round(ssRevenue),
+        avg_stay_nights:  ssBookings.length > 0 ? Math.round(ssNights / ssBookings.length) : 0,
+      },
+      long_term: {
+        active_tenancies:     activeTenancies,
+        monthly_income_kes:   Math.round(monthlyIncome),
+        pending_applications: (ltPending as any).count ?? 0,
+      },
+      by_category:   byCategory,
+      generated_at:  new Date().toISOString(),
+    };
+  }
 }
 
 export const landlordService = new LandlordService();
