@@ -1519,6 +1519,101 @@ export class AdminService {
       + (v.data ?? []).reduce((s, r) => s + Number(r.fee_paid_kes), 0)
       + (s.data ?? []).reduce((s, r) => s + Number(r.amount_kes), 0);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION 15: PROPERTY DEACTIVATION & LANDLORD STRIKE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Deactivate a property — sets status to 'off_market'.
+   * Property stays in the landlord's dashboard but is hidden from all public searches.
+   * NOTE: property_status_enum only allows: available, let, sold, off_market, under_offer.
+   */
+  async deactivateProperty(propertyId: string, adminId: string, reason?: string) {
+    const { error } = await supabaseAdmin
+      .from('properties')
+      .update({ status: 'off_market', updated_at: new Date().toISOString() })
+      .eq('id', propertyId)
+      .is('deleted_at', null);
+
+    if (error) throw new Error(`Failed to deactivate property: ${error.message}`);
+    logger.info({ propertyId, adminId, reason }, 'admin.property.deactivated');
+    return { success: true };
+  }
+
+  /**
+   * Reactivate a previously deactivated property — restores status to 'available'.
+   */
+  async activateProperty(propertyId: string, adminId: string) {
+    const { error } = await supabaseAdmin
+      .from('properties')
+      .update({ status: 'available', updated_at: new Date().toISOString() })
+      .eq('id', propertyId)
+      .is('deleted_at', null);
+
+    if (error) throw new Error(`Failed to activate property: ${error.message}`);
+    logger.info({ propertyId, adminId }, 'admin.property.activated');
+    return { success: true };
+  }
+
+  /**
+   * Strike a landlord for violations:
+   * 1. Suspends their user account (account_status = 'suspended').
+   * 2. Sets ALL their properties to 'off_market' so none appear in public searches.
+   * Landlord still sees their properties in their dashboard.
+   */
+  async strikeLandlord(userId: string, adminId: string, reason: string) {
+    // Suspend the user account (account_status_enum: active, suspended, pending_verify, banned)
+    const { error: userErr } = await supabaseAdmin
+      .from('users')
+      .update({ account_status: 'suspended', updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (userErr) throw new Error(`Failed to suspend landlord: ${userErr.message}`);
+
+    // Take all their properties off-market (property_status_enum: available, let, sold, off_market, under_offer)
+    const { error: propErr } = await supabaseAdmin
+      .from('properties')
+      .update({ status: 'off_market', updated_at: new Date().toISOString() })
+      .eq('created_by', userId)
+      .is('deleted_at', null);
+
+    if (propErr) throw new Error(`Failed to deactivate landlord properties: ${propErr.message}`);
+
+    logger.info({ userId, adminId, reason }, 'admin.landlord.struck');
+    return { success: true };
+  }
+
+  /**
+   * Get all properties with optional filters including reported ones.
+   */
+  async getAllPropertiesAdmin(page = 1, limit = 20, status?: string, hasReports?: boolean) {
+    let query = supabaseAdmin
+      .from('properties')
+      .select(`
+        id, title, status, listing_category, listing_type, created_at, updated_at,
+        owner:users!properties_created_by_fkey ( id, email, full_name:user_profiles(full_name) ),
+        property_locations ( area, county ),
+        property_media ( url, is_cover )
+      `, { count: 'exact' })
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+
+    if (status) query = query.eq('status', status);
+
+    const { data, error, count } = await query;
+    if (error) throw new Error(`Failed to fetch properties: ${error.message}`);
+
+    const total = count ?? 0;
+    return {
+      properties: data ?? [],
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
+  }
 }
 
 export const adminService = new AdminService();

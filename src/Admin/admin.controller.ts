@@ -574,6 +574,55 @@ export class AdminController {
       return c.json({ ...data, code: 'REVIEW_STATS_FETCHED' });
     } catch (err) { return fail(c, err, 'REVIEW_STATS_FAILED'); }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROPERTY DEACTIVATION & LANDLORD STRIKE
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** GET /api/admin/properties/all — paginated all properties with filters */
+  async getAllPropertiesAdmin(c: Context) {
+    try {
+      const q = c.req.query();
+      const page   = Number(q.page  ?? 1);
+      const limit  = Number(q.limit ?? 20);
+      const status = q.status;
+      const data   = await adminService.getAllPropertiesAdmin(page, limit, status);
+      return c.json({ ...data, code: 'PROPERTIES_FETCHED' });
+    } catch (err) { return fail(c, err, 'PROPERTIES_FETCH_FAILED'); }
+  }
+
+  /** PATCH /api/admin/properties/:id/deactivate — hide property from public */
+  async deactivateProperty(c: Context) {
+    try {
+      const { id } = c.req.param();
+      const user   = c.get('user') as { userId: string };
+      const body   = await c.req.json().catch(() => ({}));
+      await adminService.deactivateProperty(id, user.userId, body.reason);
+      return c.json({ message: 'Property deactivated', code: 'PROPERTY_DEACTIVATED' });
+    } catch (err) { return fail(c, err, 'PROPERTY_DEACTIVATE_FAILED'); }
+  }
+
+  /** PATCH /api/admin/properties/:id/activate — restore property to public */
+  async activateProperty(c: Context) {
+    try {
+      const { id } = c.req.param();
+      const user   = c.get('user') as { userId: string };
+      await adminService.activateProperty(id, user.userId);
+      return c.json({ message: 'Property activated', code: 'PROPERTY_ACTIVATED' });
+    } catch (err) { return fail(c, err, 'PROPERTY_ACTIVATE_FAILED'); }
+  }
+
+  /** POST /api/admin/users/:id/strike — suspend landlord + all their properties */
+  async strikeLandlord(c: Context) {
+    try {
+      const { id } = c.req.param();
+      const user   = c.get('user') as { userId: string };
+      const body   = await c.req.json().catch(() => ({}));
+      const reason = body.reason || 'Violation of platform policies';
+      await adminService.strikeLandlord(id, user.userId, reason);
+      return c.json({ message: 'Landlord struck and all properties suspended', code: 'LANDLORD_STRUCK' });
+    } catch (err) { return fail(c, err, 'LANDLORD_STRIKE_FAILED'); }
+  }
 }
 
 export const adminController = new AdminController();

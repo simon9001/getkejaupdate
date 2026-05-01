@@ -2,12 +2,13 @@ import type { Context } from 'hono';
 import { roommateService } from './roommate.service.js';
 import { logger }          from '../utils/logger.js';
 
-function resolveStatus(err: Error): 400 | 403 | 404 | 409 | 500 {
+function resolveStatus(err: Error): 400 | 403 | 404 | 409 | 429 | 500 {
   const msg = err.message.toLowerCase();
-  if (msg.includes('not found'))  return 404;
-  if (msg.includes('forbidden') || msg.includes('own profile')) return 403;
-  if (msg.includes('duplicate') || msg.includes('unique')) return 409;
-  if (msg.includes('invalid') || msg.includes('must') || msg.includes('required')) return 400;
+  if (msg.includes('not found'))                                      return 404;
+  if (msg.includes('forbidden') || msg.includes('own profile'))       return 403;
+  if (msg.includes('already exists') || msg.includes('already have')) return 409;
+  if (msg.includes('rate limit') || msg.includes('maximum'))          return 429;
+  if (msg.includes('invalid') || msg.includes('must') || msg.includes('required') || msg.includes('first')) return 400;
   return 500;
 }
 
@@ -19,19 +20,12 @@ function fail(c: Context, err: unknown, code: string) {
 
 export class RoommateController {
 
-  async listProfiles(c: Context) {
+  async getMyProfiles(c: Context) {
     try {
-      const { search, gender, budgetMax, area, page, limit } = c.req.query();
-      const data = await roommateService.listProfiles({
-        search,
-        gender,
-        budgetMax: budgetMax ? Number(budgetMax) : undefined,
-        area,
-        page:      page  ? Number(page)  : 1,
-        limit:     limit ? Number(limit) : 20,
-      });
-      return c.json({ ...data, code: 'PROFILES_FETCHED' });
-    } catch (err) { return fail(c, err, 'PROFILES_FAILED'); }
+      const userId = c.get('user').userId;
+      const profiles = await roommateService.getMyProfiles(userId);
+      return c.json({ profiles });
+    } catch (err) { return fail(c, err, 'MY_PROFILES_FAILED'); }
   }
 
   async createProfile(c: Context) {
@@ -43,13 +37,58 @@ export class RoommateController {
     } catch (err) { return fail(c, err, 'PROFILE_CREATE_FAILED'); }
   }
 
-  async sendConnect(c: Context) {
+  async deactivateProfile(c: Context) {
     try {
       const userId    = c.get('user').userId;
       const profileId = c.req.param('id');
-      const data      = await roommateService.sendConnect(userId, profileId);
-      return c.json({ ...data, code: 'CONNECT_SENT' });
-    } catch (err) { return fail(c, err, 'CONNECT_FAILED'); }
+      await roommateService.deactivateProfile(userId, profileId);
+      return c.json({ message: 'Profile deactivated', code: 'PROFILE_DEACTIVATED' });
+    } catch (err) { return fail(c, err, 'PROFILE_DEACTIVATE_FAILED'); }
+  }
+
+  async getMatchesAsHost(c: Context) {
+    try {
+      const userId = c.get('user').userId;
+      const { page, limit } = c.req.query();
+      const data = await roommateService.getMatchesAsHost(
+        userId,
+        page  ? Number(page)  : 1,
+        limit ? Number(limit) : 15,
+      );
+      return c.json({ ...data, code: 'HOST_MATCHES_FETCHED' });
+    } catch (err) { return fail(c, err, 'HOST_MATCHES_FAILED'); }
+  }
+
+  async getMatchesAsSeeker(c: Context) {
+    try {
+      const userId = c.get('user').userId;
+      const { page, limit } = c.req.query();
+      const data = await roommateService.getMatchesAsSeeker(
+        userId,
+        page  ? Number(page)  : 1,
+        limit ? Number(limit) : 15,
+      );
+      return c.json({ ...data, code: 'SEEKER_MATCHES_FETCHED' });
+    } catch (err) { return fail(c, err, 'SEEKER_MATCHES_FAILED'); }
+  }
+
+  async sendConnection(c: Context) {
+    try {
+      const userId = c.get('user').userId;
+      const { targetProfileId, myProfileId } = await c.req.json();
+      const data = await roommateService.sendConnection(userId, targetProfileId, myProfileId);
+      return c.json({ ...data, code: 'CONNECTION_SENT' });
+    } catch (err) { return fail(c, err, 'CONNECTION_FAILED'); }
+  }
+
+  async respondToConnection(c: Context) {
+    try {
+      const userId       = c.get('user').userId;
+      const connectionId = c.req.param('id');
+      const { action }   = await c.req.json();
+      const data = await roommateService.respondToConnection(userId, connectionId, action);
+      return c.json({ ...data, code: 'CONNECTION_RESPONDED' });
+    } catch (err) { return fail(c, err, 'CONNECTION_RESPOND_FAILED'); }
   }
 
   async getMyConnections(c: Context) {

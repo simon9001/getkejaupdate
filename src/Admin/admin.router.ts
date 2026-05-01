@@ -185,12 +185,18 @@ adminRouter.get('/properties/stats',     (c) => adminController.getPropertyStats
 adminRouter.get('/properties/attention', (c) => adminController.getPropertiesNeedingAttention(c));
 adminRouter.get('/properties/top',       (c) => adminController.getTopListings(c));
 adminRouter.get('/properties/pending',   (c) => adminController.getPendingListings(c));
+adminRouter.get('/properties/all',       (c) => adminController.getAllPropertiesAdmin(c));
 
 /** PATCH /api/admin/properties/:id/approve — approve pending listing */
-adminRouter.patch('/properties/:id/approve', (c) => adminController.approveListing(c));
-
+adminRouter.patch('/properties/:id/approve',    (c) => adminController.approveListing(c));
 /** PATCH /api/admin/properties/:id/reject — reject listing with reason */
-adminRouter.patch('/properties/:id/reject',  (c) => adminController.rejectListing(c));
+adminRouter.patch('/properties/:id/reject',     (c) => adminController.rejectListing(c));
+/** PATCH /api/admin/properties/:id/deactivate — suspend property (hidden from public) */
+adminRouter.patch('/properties/:id/deactivate', (c) => adminController.deactivateProperty(c));
+/** PATCH /api/admin/properties/:id/activate — restore suspended property */
+adminRouter.patch('/properties/:id/activate',   (c) => adminController.activateProperty(c));
+/** POST /api/admin/users/:id/strike — suspend landlord + all their properties */
+adminRouter.post('/users/:id/strike',           (c) => adminController.strikeLandlord(c));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOOKINGS
