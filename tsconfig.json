@@ -3,10 +3,13 @@
     "noEmit": false,
     "target": "ESNext",
     "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "moduleDetection": "force",  // ← Helps with ES modules
     "rootDir": "src",
     "strict": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,  // ← Catches case issues early
     "types": [
       "node"
     ],
