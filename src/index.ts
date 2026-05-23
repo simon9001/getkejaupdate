@@ -51,7 +51,7 @@ import { landlordRouter as landlordDashboardRouter } from './Landlord/landlord.r
 import { caretakerRouter }  from './caretaker/caretaker.router.js';
 import { staffRouter }      from './staff/staff.router.js';
 import { agentRouter }      from './agent/agent.router.js';
-// import { developerRouter } from './developer/developer.router.js';
+import { developerRouter } from './Developer/developer.router.js';
 
 import { roommateRouter }   from './roommate/roommate.router.js';
 import { movingRouter }     from './moving/moving.router.js';
@@ -275,7 +275,7 @@ app.route('/api/landlord',            landlordDashboardRouter); // dashboard, te
 app.route('/api/caretaker',           caretakerRouter);        // caretaker dashboard, maintenance, tenants
 app.route('/api/staff',               staffRouter);            // staff moderation dashboard
 app.route('/api/agent',               agentRouter);            // agent dashboard KPIs + viewings, leads, commissions
-// app.route('/api/developer',           developerRouter);         // developer pipeline + unit tracker
+app.route('/api/developer',           developerRouter);         // developer pipeline + unit tracker
 app.route('/api/roommate',            roommateRouter);           // roommate finder — profiles + connections
 app.route('/api/moving',              movingRouter);             // moving services — companies + quotes
 app.route('/api/search',              searchRouter);           // public search (text, nearby, map)
