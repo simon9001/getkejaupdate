@@ -302,6 +302,22 @@ app.notFound((c) => {
   );
 });
 
+///serverawakemf
+app.get('/api/internal/cron/ping', async (c) => {
+  // Optional: simple protection so random people can't hit it
+  const secret = c.req.header('x-cron-secret');
+
+  if (secret !== env.cron.secret) {
+    return c.text('Unauthorized', 401);
+  }
+
+  // Keep payload extremely small (bandwidth optimized)
+  return c.json({
+    ok: true,
+    ts: Date.now(),
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. Global error handler
 //

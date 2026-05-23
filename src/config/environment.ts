@@ -57,14 +57,14 @@ const environment = {
   refreshTokenExpires:   7 * 24 * 60 * 60 * 1000,   // 7 days ms
 
   // Email verification
-  emailVerificationExpires: 24 * 60 * 60 * 1000,    // 24 hours ms
+  emailVerificationExpires: 24 * 60 * 60 * 1000,
   emailVerificationSecret:  (process.env.EMAIL_VERIFICATION_SECRET || process.env.JWT_SECRET)!,
 
   // Password reset
-  passwordResetExpires: 1 * 60 * 60 * 1000,         // 1 hour ms
+  passwordResetExpires: 1 * 60 * 60 * 1000,
   passwordResetSecret:  (process.env.PASSWORD_RESET_SECRET || process.env.JWT_SECRET)!,
 
-  // Google OAuth  ← NEW
+  // Google OAuth
   google: {
     clientId:     process.env.GOOGLE_CLIENT_ID!,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -82,7 +82,7 @@ const environment = {
     fromName:  ensureString(process.env.SMTP_FROM_NAME, 'GetKeja'),
   },
 
-  // Frontend (for email links & OAuth redirects)
+  // Frontend
   frontendUrl: ensureString(process.env.FRONTEND_URL, 'http://localhost:5174'),
   apiUrl:      process.env.API_URL || `http://localhost:${process.env.PORT || 8000}`,
 
@@ -101,13 +101,20 @@ const environment = {
   // Cloudinary
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
-    apiKey:    process.env.CLOUDINARY_API_KEY    || '',
+    apiKey:    process.env.CLOUDINARY_API_KEY || '',
     apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+  },
+
+  // -----------------------------------------------------------------------
+  // 🔥 NEW: Cron / internal jobs security
+  // -----------------------------------------------------------------------
+  cron: {
+    secret: process.env.CRON_SECRET || '',
   },
 } as const;
 
 // ---------------------------------------------------------------------------
-// Secret length validation
+// Secret validation
 // ---------------------------------------------------------------------------
 const validateSecrets = () => {
   const secrets: Record<string, string> = {
@@ -115,6 +122,9 @@ const validateSecrets = () => {
     emailVerificationSecret: environment.emailVerificationSecret,
     passwordResetSecret:   environment.passwordResetSecret,
     googleClientSecret:    environment.google.clientSecret,
+
+    // NEW
+    cronSecret:            environment.cron.secret,
   };
 
   for (const [key, value] of Object.entries(secrets)) {
@@ -135,13 +145,10 @@ export type Env = typeof environment;
 // ---------------------------------------------------------------------------
 if (environment.isDevelopment) {
   console.log('🚀 Environment loaded:', {
-    nodeEnv:                 environment.nodeEnv,
-    port:                    environment.port,
-    frontendUrl:             environment.frontendUrl,
-    googleRedirectUri:       environment.google.redirectUri,
-    emailVerificationExpires: `${environment.emailVerificationExpires / 3_600_000}h`,
-    passwordResetExpires:    `${environment.passwordResetExpires / 3_600_000}h`,
-    jwtSecret:               '✓',
-    googleClientId:          environment.google.clientId ? '✓' : '✗ MISSING',
+    nodeEnv:           environment.nodeEnv,
+    port:              environment.port,
+    frontendUrl:       environment.frontendUrl,
+    googleRedirectUri: environment.google.redirectUri,
+    cronSecret:        environment.cron.secret ? '✓' : '✗ MISSING',
   });
 }
