@@ -3,21 +3,22 @@
     "noEmit": false,
     "target": "ESNext",
     "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-
     "rootDir": "src",
-    "outDir": "./dist",
-
     "strict": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-
-    "types": ["node"],
-
+    "types": [
+      "node"
+    ],
     "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx"
+    "jsxImportSource": "hono/jsx",
+    "outDir": "./dist"
   },
-
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
